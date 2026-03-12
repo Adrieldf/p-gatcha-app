@@ -7,9 +7,9 @@ import confetti from "canvas-confetti";
 
 type PackState = "sealed" | "tearing" | "opened" | "revealing" | "done";
 type Rarity = "Common" | "Uncommon" | "Rare" | "Epic" | "Legendary";
-type SortOption = "name_asc" | "name_desc" | "rarity_high" | "rarity_low" | "views_high" | "views_low" | "favorites_high" | "favorites_low";
+type SortOption = "name_asc" | "name_desc" | "rarity_high" | "rarity_low" | "year_new" | "year_old" | "rating_high" | "rating_low";
 
-import { CardData, fetchRandomImages } from "../lib/motherless";
+import { CardData, fetchRandomMovies } from "../lib/tmdb";
 
 const ScrollableTitle = ({ title, baseClass }: { title: string; baseClass: string }) => {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -25,11 +25,11 @@ const ScrollableTitle = ({ title, baseClass }: { title: string; baseClass: strin
   return (
     <div
       ref={containerRef}
-      className={`w-full overflow-hidden mb-3 relative ${shouldScroll ? "mask-image-edges" : "flex justify-center"}`}
+      className={`w-full overflow-hidden mb-3 relative ${shouldScroll ? 'mask-image-edges' : 'flex justify-center'}`}
       style={shouldScroll ? { WebkitMaskImage: "linear-gradient(to right, transparent, black 10%, black 90%, transparent)", maskImage: "linear-gradient(to right, transparent, black 10%, black 90%, transparent)" } : {}}
     >
       <div className={shouldScroll ? "w-max animate-marquee whitespace-nowrap flex" : "w-full text-center flex flex-col items-center"}>
-        <h2 ref={textRef} className={`${baseClass} ${shouldScroll ? "pr-8" : "line-clamp-2"}`}>
+        <h2 ref={textRef} className={`${baseClass} ${shouldScroll ? 'pr-8' : 'line-clamp-2'}`}>
           {title}
         </h2>
         {shouldScroll && (
@@ -40,12 +40,6 @@ const ScrollableTitle = ({ title, baseClass }: { title: string; baseClass: strin
       </div>
     </div>
   );
-};
-
-const formatCount = (n: number): string => {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
-  return String(n);
 };
 
 export default function Home() {
@@ -61,6 +55,7 @@ export default function Home() {
   const [isCollectionView, setIsCollectionView] = useState(false);
   const [sortBy, setSortBy] = useState<SortOption>("rarity_high");
   const [gridSize, setGridSize] = useState<"sm" | "md" | "lg">("md");
+  const [showTrailerIdx, setShowTrailerIdx] = useState<number | null>(null);
   const [isMuted, setIsMuted] = useState(false);
   const [newCardIds, setNewCardIds] = useState<Set<string>>(new Set());
   const [isAutoMode, setIsAutoMode] = useState(false);
@@ -69,7 +64,9 @@ export default function Home() {
   useEffect(() => {
     if (typeof window !== "undefined") {
       const params = new URLSearchParams(window.location.search);
-      if (params.get("auto") === "true") setIsAutoMode(true);
+      if (params.get("auto") === "true") {
+        setIsAutoMode(true);
+      }
       const countParam = params.get("count");
       if (countParam) {
         const parsedCount = parseInt(countParam, 10);
@@ -82,69 +79,106 @@ export default function Home() {
 
   const playSound = useCallback((type: "tear" | "flip" | "sparkle" | "swoosh" | Rarity) => {
     if (isMuted) return;
+
     const urls = {
-      tear: "https://assets.mixkit.co/active_storage/sfx/147/147-preview.mp3",
-      flip: "https://assets.mixkit.co/active_storage/sfx/2019/2019-preview.mp3",
-      swoosh: "https://assets.mixkit.co/active_storage/sfx/2000/2000-preview.mp3",
-      sparkle: "https://assets.mixkit.co/active_storage/sfx/1998/1998-preview.mp3",
+      tear: "https://assets.mixkit.co/active_storage/sfx/147/147-preview.mp3", // tear
+      flip: "https://assets.mixkit.co/active_storage/sfx/2019/2019-preview.mp3", // simple flip
+      swoosh: "https://assets.mixkit.co/active_storage/sfx/2000/2000-preview.mp3", // move
+      sparkle: "https://assets.mixkit.co/active_storage/sfx/1998/1998-preview.mp3", // Cinematic magic whoosh
       Common: "https://assets.mixkit.co/active_storage/sfx/2019/2019-preview.mp3",
       Uncommon: "https://assets.mixkit.co/active_storage/sfx/2000/2000-preview.mp3",
       Rare: "https://assets.mixkit.co/active_storage/sfx/2018/2018-preview.mp3",
       Epic: "https://assets.mixkit.co/active_storage/sfx/2013/2013-preview.mp3",
-      Legendary: "https://assets.mixkit.co/active_storage/sfx/1998/1998-preview.mp3",
+      Legendary: "https://assets.mixkit.co/active_storage/sfx/1998/1998-preview.mp3"
     };
+
     const audio = new Audio(urls[type as keyof typeof urls] || urls.flip);
+
     let baseVolume = 0.08;
-    if (type === "Legendary" || type === "sparkle") baseVolume = 0.4;
+    if (type === "Legendary" || type === "sparkle") baseVolume = 0.4; // High impact
     if (type === "Epic") baseVolume = 0.15;
     if (type === "Rare") baseVolume = 0.12;
+
     audio.volume = baseVolume;
-    audio.play().catch((e) => console.log("Audio play blocked", e));
-    const duration = type === "Legendary" || type === "sparkle" ? 3000 : 500;
+    audio.play().catch(e => console.log("Audio play blocked", e));
+
+    const duration = (type === "Legendary" || type === "sparkle") ? 3000 : 500;
     setTimeout(() => {
       const fadeOut = setInterval(() => {
-        if (audio.volume > 0.01) audio.volume -= 0.01;
-        else { audio.pause(); clearInterval(fadeOut); }
+        if (audio.volume > 0.01) {
+          audio.volume -= 0.01;
+        } else {
+          audio.pause();
+          clearInterval(fadeOut);
+        }
       }, 20);
     }, duration);
   }, [isMuted]);
 
-  const playedRevealSounds = useRef<Set<number>>(new Set());
-
+  // Effect to sync reveal sounds with flip state
   useEffect(() => {
     if (packState !== "revealing") return;
+
     if (flippedCards[activeCardIndex] && !playedRevealSounds.current.has(activeCardIndex)) {
       const card = cards[activeCardIndex];
       if (card) {
         playedRevealSounds.current.add(activeCardIndex);
         playSound(card.rarity);
+
         if (card.rarity === "Legendary") {
-          confetti({ particleCount: 150, spread: 80, origin: { y: 0.6 }, colors: ["#FBBF24", "#F59E0B", "#D97706", "#FFFBEB"] });
+          confetti({
+            particleCount: 150,
+            spread: 80,
+            origin: { y: 0.6 },
+            colors: ["#FBBF24", "#F59E0B", "#D97706", "#FFFBEB"],
+          });
         }
       }
     }
   }, [flippedCards, activeCardIndex, packState, cards, playSound]);
 
   useEffect(() => {
+    let timeout: NodeJS.Timeout;
+    if (!isAutoMode && packState === "revealing" && flippedCards[activeCardIndex]) {
+      timeout = setTimeout(() => {
+        setShowTrailerIdx(activeCardIndex);
+      }, 3000);
+    } else {
+      setShowTrailerIdx(null);
+    }
+    return () => clearTimeout(timeout);
+  }, [packState, flippedCards, activeCardIndex, isAutoMode]);
+
+  useEffect(() => {
     const saved = localStorage.getItem("gacha_collection");
     if (saved) {
-      try { setCollection(JSON.parse(saved)); } catch (e) { console.error("Failed to parse local collection", e); }
+      try {
+        setCollection(JSON.parse(saved));
+      } catch (e) {
+        console.error("Failed to parse local collection", e);
+      }
     }
   }, []);
 
   const topPartRef = useRef<HTMLDivElement>(null);
   const isOpenedRef = useRef(false);
+  const playedRevealSounds = useRef<Set<number>>(new Set());
   const controls = useAnimation();
 
   const handleOpen = useCallback(async () => {
     if (isOpenedRef.current) return;
     isOpenedRef.current = true;
     setIsLoading(true);
-    const fetchedCards = await fetchRandomImages(packSize);
+    const fetchedCards = await fetchRandomMovies(packSize);
 
-    const existingIds = new Set(collection.map((c) => c.id));
+    // Check which IDs are new
+    const existingIds = new Set(collection.map(c => c.id));
     const newlyFoundIds = new Set<string>();
-    fetchedCards.forEach((c) => { if (!existingIds.has(c.id)) newlyFoundIds.add(c.id); });
+    fetchedCards.forEach(c => {
+      if (!existingIds.has(c.id)) {
+        newlyFoundIds.add(c.id);
+      }
+    });
     setNewCardIds(newlyFoundIds);
 
     setCards(fetchedCards);
@@ -158,8 +192,18 @@ export default function Home() {
 
     setPackState("opened");
     setTearProgress(100);
-    controls.start({ y: -150, x: 100, opacity: 0, rotate: 25, transition: { duration: 0.6, ease: "easeOut" } });
-    setTimeout(() => setPackState("revealing"), 800);
+
+    controls.start({
+      y: -150,
+      x: 100,
+      opacity: 0,
+      rotate: 25,
+      transition: { duration: 0.6, ease: "easeOut" },
+    });
+
+    setTimeout(() => {
+      setPackState("revealing");
+    }, 800);
   }, [controls, collection, packSize]);
 
   const updateTear = (clientX: number) => {
@@ -168,9 +212,13 @@ export default function Home() {
       const x = clientX - rect.left;
       let progress = (x / rect.width) * 100;
       progress = Math.max(0, Math.min(100, progress));
+
       setTearProgress((prev) => {
         const newProgress = Math.max(prev, progress);
-        if (newProgress >= 85) { setTimeout(handleOpen, 0); return 100; }
+        if (newProgress >= 85) {
+          setTimeout(handleOpen, 0);
+          return 100;
+        }
         return newProgress;
       });
     }
@@ -182,7 +230,9 @@ export default function Home() {
     setPackState("tearing");
     playSound("tear");
     updateTear(e.clientX);
-    if (topPartRef.current) topPartRef.current.setPointerCapture(e.pointerId);
+    if (topPartRef.current) {
+      topPartRef.current.setPointerCapture(e.pointerId);
+    }
   };
 
   const handlePointerMove = (e: React.PointerEvent) => {
@@ -193,21 +243,34 @@ export default function Home() {
   const handlePointerUp = (e: React.PointerEvent) => {
     if (!isTearing) return;
     setIsTearing(false);
-    if (topPartRef.current) topPartRef.current.releasePointerCapture(e.pointerId);
-    if (tearProgress > 85) handleOpen();
-    else { setTearProgress(0); setPackState("sealed"); }
+    if (topPartRef.current) {
+      topPartRef.current.releasePointerCapture(e.pointerId);
+    }
+    if (tearProgress > 85) {
+      handleOpen();
+    } else {
+      setTearProgress(0);
+      setPackState("sealed");
+    }
   };
 
-  const handleFlip = (idx: number) => setFlippedCards((prev) => ({ ...prev, [idx]: true }));
+  const handleFlip = (idx: number) => {
+    setFlippedCards(prev => ({ ...prev, [idx]: true }));
+  };
 
-  const handleNextCard = useCallback(() => {
-    if (activeCardIndex < cards.length - 1) setActiveCardIndex((prev) => prev + 1);
-    else setPackState("done");
-  }, [activeCardIndex, cards.length]);
+  const handleNextCard = () => {
+    if (activeCardIndex < cards.length - 1) {
+      setActiveCardIndex(prev => prev + 1);
+    } else {
+      setPackState("done");
+    }
+  };
 
   const handleSkipAll = () => {
     const allFlipped: Record<number, boolean> = {};
-    cards.forEach((_, idx) => { allFlipped[idx] = true; });
+    cards.forEach((_, idx) => {
+      allFlipped[idx] = true;
+    });
     setFlippedCards(allFlipped);
     setPackState("done");
     setActiveCardIndex(cards.length - 1);
@@ -215,21 +278,29 @@ export default function Home() {
 
   useEffect(() => {
     if (!isAutoMode) return;
+
     if (packState === "sealed") {
-      const timer = setTimeout(() => handleOpen(), 2500);
+      const timer = setTimeout(() => {
+        handleOpen();
+      }, 2500);
       return () => clearTimeout(timer);
     }
+
     if (packState === "revealing") {
       const isFlipped = flippedCards[activeCardIndex];
       if (!isFlipped) {
-        const timer = setTimeout(() => handleFlip(activeCardIndex), 1000);
+        const timer = setTimeout(() => {
+          handleFlip(activeCardIndex);
+        }, 1000);
         return () => clearTimeout(timer);
       } else {
-        const timer = setTimeout(() => handleNextCard(), 6000);
+        const timer = setTimeout(() => {
+          handleNextCard();
+        }, 6000);
         return () => clearTimeout(timer);
       }
     }
-  }, [isAutoMode, packState, activeCardIndex, flippedCards, handleOpen, handleNextCard]);
+  }, [isAutoMode, packState, activeCardIndex, flippedCards, handleOpen, handleFlip, handleNextCard]);
 
   const resetPack = () => {
     isOpenedRef.current = false;
@@ -239,6 +310,7 @@ export default function Home() {
     setActiveCardIndex(0);
     setFlippedCards({});
     setIsGridView(false);
+    setShowTrailerIdx(null);
     setNewCardIds(new Set());
     playedRevealSounds.current.clear();
     controls.set({ x: 0, y: 0, opacity: 1, rotate: 0 });
@@ -248,17 +320,17 @@ export default function Home() {
     <div className="w-full h-full flex flex-col pointer-events-none">
       <div className="w-full h-4 bg-gradient-to-b from-slate-500 to-slate-600 rounded-t-lg overflow-hidden flex shrink-0">
         {Array.from({ length: 20 }).map((_, i) => (
-          <div key={`crimp-${i}`} className="flex-1 border-r border-slate-700/30" />
+          <div key={`crimp-${i}`} className="flex-1 border-r border-slate-700/30"></div>
         ))}
       </div>
       <div className="w-full flex-1 bg-gradient-to-b from-slate-800 to-slate-900 relative overflow-hidden border-b border-slate-700/50 shadow-inner">
-        <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-10 mix-blend-overlay" />
+        <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-10 mix-blend-overlay"></div>
         <div className="absolute top-1/2 left-0 right-0 transform -translate-y-1/2 flex items-center justify-center px-4">
           {isLoading && (
             <div className="absolute inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center rounded-xl">
               <div className="flex flex-col items-center">
                 <RefreshCcw className="w-8 h-8 text-white animate-spin mb-2" />
-                <span className="text-white font-medium text-sm animate-pulse">Loading Images...</span>
+                <span className="text-white font-medium text-sm animate-pulse">Fetching Movies...</span>
               </div>
             </div>
           )}
@@ -268,7 +340,7 @@ export default function Home() {
             </div>
           )}
         </div>
-        <div className="absolute bottom-0 left-0 right-0 h-[2px] border-b-2 border-dashed border-white/20 truncate" />
+        <div className="absolute bottom-0 left-0 right-0 h-[2px] border-b-2 border-dashed border-white/20 truncate"></div>
       </div>
     </div>
   );
@@ -284,13 +356,22 @@ export default function Home() {
     return colors[rarity] || colors.Common;
   };
 
-  const rarityOrder: Record<Rarity, number> = { Common: 0, Uncommon: 1, Rare: 2, Epic: 3, Legendary: 4 };
+  const rarityOrder: Record<Rarity, number> = {
+    Common: 0,
+    Uncommon: 1,
+    Rare: 2,
+    Epic: 3,
+    Legendary: 4,
+  };
 
   const getGroupedCollection = (cardList: CardData[]) => {
     const groups: Map<string, { card: CardData; count: number }> = new Map();
-    cardList.forEach((card) => {
-      if (groups.has(card.id)) groups.get(card.id)!.count++;
-      else groups.set(card.id, { card, count: 1 });
+    cardList.forEach(card => {
+      if (groups.has(card.id)) {
+        groups.get(card.id)!.count++;
+      } else {
+        groups.set(card.id, { card, count: 1 });
+      }
     });
     return Array.from(groups.values());
   };
@@ -298,15 +379,24 @@ export default function Home() {
   const getSortedCards = (cardList: CardData[]) => {
     return [...cardList].sort((a, b) => {
       switch (sortBy) {
-        case "name_asc": return a.name.localeCompare(b.name);
-        case "name_desc": return b.name.localeCompare(a.name);
-        case "rarity_high": return rarityOrder[b.rarity] - rarityOrder[a.rarity] || a.name.localeCompare(b.name);
-        case "rarity_low": return rarityOrder[a.rarity] - rarityOrder[b.rarity] || a.name.localeCompare(b.name);
-        case "views_high": return b.views - a.views;
-        case "views_low": return a.views - b.views;
-        case "favorites_high": return b.favorites - a.favorites;
-        case "favorites_low": return a.favorites - b.favorites;
-        default: return 0;
+        case "name_asc":
+          return a.name.localeCompare(b.name);
+        case "name_desc":
+          return b.name.localeCompare(a.name);
+        case "rarity_high":
+          return rarityOrder[b.rarity] - rarityOrder[a.rarity] || a.name.localeCompare(b.name);
+        case "rarity_low":
+          return rarityOrder[a.rarity] - rarityOrder[b.rarity] || a.name.localeCompare(b.name);
+        case "year_new":
+          return (b.year || 0) - (a.year || 0) || a.name.localeCompare(b.name);
+        case "year_old":
+          return (a.year || 9999) - (b.year || 9999) || a.name.localeCompare(b.name);
+        case "rating_high":
+          return b.rating - a.rating || a.name.localeCompare(b.name);
+        case "rating_low":
+          return a.rating - b.rating || a.name.localeCompare(b.name);
+        default:
+          return 0;
       }
     });
   };
@@ -316,7 +406,6 @@ export default function Home() {
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_50%,_rgba(120,0,255,0.1),_rgba(0,0,0,1))] pointer-events-none" />
 
       <main className="relative z-10 w-full max-w-md mx-auto p-6 h-[100dvh] flex flex-col items-center justify-center">
-        {/* HEADER */}
         <div className="absolute top-6 w-full px-6 flex justify-between items-center z-50 pointer-events-none left-0 right-0 max-w-md">
           <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-600 pointer-events-auto">
             Pack Opener
@@ -329,7 +418,7 @@ export default function Home() {
             )}
             <button
               onClick={() => setIsMuted(!isMuted)}
-              className="bg-white/10 hover:bg-white/20 backdrop-blur-md border border-white/20 text-white p-2 rounded-full shadow-lg transition-all"
+              className="bg-white/10 hover:bg-white/20 backdrop-blur-md border border-white/20 text-white p-2 rounded-full shadow-lg transition-all group"
               title={isMuted ? "Unmute" : "Mute"}
             >
               {isMuted ? (
@@ -355,9 +444,17 @@ export default function Home() {
           <AnimatePresence>
             {(packState === "revealing" || packState === "done") && cards.map((card, idx) => {
               if (packState === "revealing" && idx !== activeCardIndex) return null;
+
               const isFlipped = flippedCards[idx] || packState === "done";
               const zIndex = packState === "done" ? cards.length - idx : 20;
-              const col = getRarityColors(card.rarity);
+
+              let youtubeId = null;
+              if (card.trailer) {
+                const parts = card.trailer.split("v=");
+                if (parts.length > 1) {
+                  youtubeId = parts[1].split("&")[0];
+                }
+              }
 
               return (
                 <motion.div
@@ -368,15 +465,18 @@ export default function Home() {
                     x: packState === "done" ? (idx - 2) * 20 : 0,
                     scale: packState === "done" ? 0.9 : 1,
                     opacity: 1,
-                    rotate: packState === "done" ? (idx - 2) * 5 : 0,
+                    rotate: packState === "done" ? (idx - 2) * 5 : 0
                   }}
                   exit={{ y: -50, opacity: 0, scale: 0.9 }}
                   transition={{ type: "spring", bounce: 0.4, duration: 0.6 }}
                   onClick={() => {
                     if (isAutoMode) return;
                     if (packState === "revealing") {
-                      if (!isFlipped) handleFlip(idx);
-                      else if (idx === activeCardIndex) handleNextCard();
+                      if (!isFlipped) {
+                        handleFlip(idx);
+                      } else if (idx === activeCardIndex) {
+                        handleNextCard();
+                      }
                     }
                   }}
                   className={`absolute ${isAutoMode ? "pointer-events-none" : "cursor-pointer"} perspective-1000 w-[368px] h-[461px]`}
@@ -394,20 +494,23 @@ export default function Home() {
                       className="absolute inset-0 w-full h-full bg-slate-900 rounded-xl border-4 border-slate-500 shadow-[0_0_20px_rgba(100,116,139,0.5)] flex flex-col items-center justify-center backface-hidden overflow-hidden"
                       style={{ backfaceVisibility: "hidden", transform: "rotateY(180deg)" }}
                     >
-                      {/* Decorative dots */}
+                      {/* Film strip borders */}
                       <div className="absolute left-1 top-0 bottom-0 w-3 flex flex-col py-1 space-y-1.5 opacity-30">
-                        {Array.from({ length: 24 }).map((_, i) => <div key={`l-${i}`} className="w-full h-2 bg-black rounded-sm" />)}
+                        {Array.from({ length: 24 }).map((_, i) => <div key={`l-${i}`} className="w-full h-2 bg-black rounded-sm"></div>)}
                       </div>
                       <div className="absolute right-1 top-0 bottom-0 w-3 flex flex-col py-1 space-y-1.5 opacity-30">
-                        {Array.from({ length: 24 }).map((_, i) => <div key={`r-${i}`} className="w-full h-2 bg-black rounded-sm" />)}
+                        {Array.from({ length: 24 }).map((_, i) => <div key={`r-${i}`} className="w-full h-2 bg-black rounded-sm"></div>)}
                       </div>
+
                       <div className="w-24 h-24 rounded-full border-2 border-slate-500/30 flex items-center justify-center p-2 mb-4 relative drop-shadow-xl">
-                        <div className="absolute inset-2 rounded-full border border-dashed border-slate-400/60 animate-[spin_20s_linear_infinite]" />
-                        <div className="text-4xl filter grayscale brightness-150">📷</div>
+                        <div className="absolute inset-2 rounded-full border border-dashed border-slate-400/60 animate-[spin_20s_linear_infinite]"></div>
+                        <div className="text-4xl filter grayscale brightness-150">🎬</div>
                       </div>
+
                       <div className="text-slate-300 font-black text-xl tracking-[0.2em] font-serif text-center drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)]">
-                        PHOTO<br />COLLECTION
+                        CINEMA<br />COLLECTION
                       </div>
+
                       {packState === "revealing" && !isFlipped && (
                         <div className="absolute bottom-6 left-0 right-0 text-center text-[10px] font-black tracking-[0.2em] text-slate-400/80 animate-pulse uppercase">
                           {isAutoMode ? "Auto-Revealing..." : "Tap to Flip"}
@@ -417,37 +520,41 @@ export default function Home() {
 
                     {/* Card Front */}
                     <div
-                      className={`absolute inset-0 w-full h-full bg-gradient-to-br ${col.bg} rounded-xl p-1 shadow-2xl backface-hidden`}
+                      className={`absolute inset-0 w-full h-full bg-gradient-to-br ${getRarityColors(card.rarity).bg} rounded-xl p-1 shadow-2xl backface-hidden`}
                       style={{ backfaceVisibility: "hidden" }}
                     >
-                      <div className={`w-full h-full border-2 ${col.border} rounded-lg flex flex-col bg-black/40 backdrop-blur-sm relative overflow-hidden`}>
-
-                        {/* Full-bleed image — clicking opens source URL */}
-                        {card.imageUrl && (
-                          <a
-                            href={card.sourceUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="absolute inset-0 z-0"
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            <div
-                              className="w-full h-full bg-cover bg-center"
-                              style={{ backgroundImage: `url(${card.imageUrl})` }}
-                            />
-                          </a>
+                      <div className={`w-full h-full border-2 ${getRarityColors(card.rarity).border} rounded-lg flex flex-col bg-black/40 backdrop-blur-sm relative overflow-hidden`}>
+                        {/* Background Poster Cover */}
+                        {card.poster && (
+                          <div
+                            className="absolute inset-0 bg-cover bg-center opacity-80 mix-blend-overlay transition-opacity duration-1000"
+                            style={{ backgroundImage: `url(${card.poster})`, opacity: showTrailerIdx === idx && youtubeId ? 0 : 0.8 }}
+                          />
                         )}
 
-                        {/* Gradient overlays */}
-                        <div className="absolute inset-x-0 top-0 h-1/3 bg-gradient-to-b from-black/80 via-black/30 to-transparent z-10 pointer-events-none" />
-                        <div className="absolute inset-x-0 bottom-0 h-2/5 bg-gradient-to-t from-black/90 via-black/60 to-transparent z-10 pointer-events-none" />
+                        {showTrailerIdx === idx && youtubeId && (
+                          <div className="absolute inset-0 overflow-hidden pointer-events-none mix-blend-overlay">
+                            <motion.iframe
+                              initial={{ opacity: 0 }}
+                              animate={{ opacity: 0.8 }}
+                              transition={{ duration: 1 }}
+                              className="w-[300%] h-full -ml-[100%] scale-[1.3] pointer-events-none"
+                              src={`https://www.youtube.com/embed/${youtubeId}?autoplay=1&mute=0&controls=0&loop=1&playlist=${youtubeId}&modestbranding=1&rel=0&showinfo=0`}
+                              frameBorder="0"
+                              allow="autoplay; encrypted-media"
+                            />
+                          </div>
+                        )}
 
-                        {/* Top: Rarity badge */}
-                        <div className="relative z-20 flex justify-between items-start w-full p-3">
+                        <div className="absolute inset-x-0 top-0 h-1/2 bg-gradient-to-b from-black/80 via-black/30 to-transparent" />
+                        <div className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-black/90 via-black/60 to-transparent" />
+
+                        {/* Top Area: Rarity & Rating */}
+                        <div className="relative z-10 flex justify-between items-start w-full p-3">
                           <div className="flex flex-col gap-1">
                             <div className="bg-black/50 backdrop-blur rounded px-2 py-1 flex items-center gap-1">
-                              <Sparkles className={`w-4 h-4 ${col.icon}`} />
-                              <span className={`text-xs font-bold uppercase tracking-wider ${col.text}`}>{card.rarity}</span>
+                              <Sparkles className={`w-4 h-4 ${getRarityColors(card.rarity).icon}`} />
+                              <span className={`text-xs font-bold uppercase tracking-wider ${getRarityColors(card.rarity).text}`}>{card.rarity}</span>
                             </div>
                             {newCardIds.has(card.id) && (
                               <motion.div
@@ -459,21 +566,29 @@ export default function Home() {
                               </motion.div>
                             )}
                           </div>
-                          {/* Views badge */}
                           <div className="bg-black/50 backdrop-blur rounded px-2 py-1">
-                            <span className="text-white/80 font-bold text-sm">👁 {formatCount(card.views)}</span>
+                            <span className="text-yellow-400 font-bold text-sm">⭐ {card.rating.toFixed(1)}</span>
                           </div>
                         </div>
 
-                        {/* Bottom: Title + Favorites */}
-                        <div className="relative z-20 mt-auto p-4 w-full flex flex-col items-center">
+                        {/* Bottom Area: Title & Links */}
+                        <div className="relative z-10 mt-auto p-4 w-full flex flex-col items-center">
                           <ScrollableTitle title={card.name} baseClass="text-lg font-black text-white uppercase tracking-tight drop-shadow-md leading-tight" />
-                          <div className="flex items-center gap-3 mt-1">
-                            <span className="text-pink-400 font-bold text-sm">❤️ {formatCount(card.favorites)}</span>
+                          <div className="flex gap-2 w-full justify-center">
+                            {card.trailer && (
+                              <a href={card.trailer} target="_blank" rel="noopener noreferrer" className="bg-red-600 hover:bg-red-700 text-white text-xs font-bold py-1.5 px-3 rounded shadow-md transition-colors" onClick={(e) => e.stopPropagation()}>
+                                Trailer
+                              </a>
+                            )}
+                            {card.imdb_link && (
+                              <a href={card.imdb_link} target="_blank" rel="noopener noreferrer" className="bg-[#f5c518] hover:bg-[#d6ab15] text-black text-xs font-bold py-1.5 px-3 rounded shadow-md transition-colors" onClick={(e) => e.stopPropagation()}>
+                                IMDb
+                              </a>
+                            )}
                           </div>
                         </div>
                       </div>
-                      <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/20 to-transparent opacity-50 mix-blend-overlay rounded-xl pointer-events-none" />
+                      <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/20 to-transparent opacity-50 mix-blend-overlay rounded-xl pointer-events-none"></div>
                     </div>
                   </motion.div>
                 </motion.div>
@@ -499,51 +614,61 @@ export default function Home() {
                   className={`relative h-1/4 w-full ${isAutoMode ? "pointer-events-none" : "cursor-pointer"} z-40 touch-none`}
                   style={{
                     transformOrigin: "100% 100%",
-                    transform: tearProgress > 0 ? `rotate(${tearProgress * 0.05}deg) translateY(${-tearProgress * 0.05}px)` : "none",
+                    transform: tearProgress > 0
+                      ? `rotate(${tearProgress * 0.05}deg) translateY(${-tearProgress * 0.05}px)`
+                      : 'none',
                   }}
                 >
                   <div className="absolute inset-0 w-full h-full drop-shadow-2xl">
                     {topFoilContent}
                     {tearProgress > 0 && tearProgress < 100 && (
-                      <div className="absolute bottom-[-1px] left-0 h-[3px] bg-white/60 blur-[2px]" style={{ width: `${tearProgress}%` }} />
+                      <div
+                        className="absolute bottom-[-1px] left-0 h-[3px] bg-white/60 blur-[2px]"
+                        style={{ width: `${tearProgress}%` }}
+                      ></div>
                     )}
                   </div>
                 </motion.div>
 
                 {/* BOTTOM MAIN BODY */}
                 <div className="h-3/4 w-full bg-gradient-to-b from-slate-800 to-black relative rounded-b-lg overflow-hidden shadow-2xl border-t border-slate-700">
-                  <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-10 mix-blend-overlay" />
+                  <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-10 mix-blend-overlay"></div>
 
-                  {/* Decorative strips */}
+                  {/* Film reel details */}
                   <div className="absolute left-4 top-0 bottom-0 w-4 flex flex-col py-4 space-y-3 opacity-20 mix-blend-overlay">
-                    {Array.from({ length: 8 }).map((_, i) => <div key={`fl-${i}`} className="w-full h-8 bg-white rounded-sm" />)}
+                    {Array.from({ length: 8 }).map((_, i) => <div key={`fl-${i}`} className="w-full h-8 bg-white rounded-sm"></div>)}
                   </div>
                   <div className="absolute right-4 top-0 bottom-0 w-4 flex flex-col py-4 space-y-3 opacity-20 mix-blend-overlay">
-                    {Array.from({ length: 8 }).map((_, i) => <div key={`fr-${i}`} className="w-full h-8 bg-white rounded-sm" />)}
+                    {Array.from({ length: 8 }).map((_, i) => <div key={`fr-${i}`} className="w-full h-8 bg-white rounded-sm"></div>)}
                   </div>
 
-                  {/* Center icon — camera */}
                   <div className="absolute inset-0 flex items-center justify-center p-6">
                     <div className="w-32 h-28 bg-slate-900 rounded-md shadow-2xl relative flex flex-col overflow-hidden rotate-[-4deg] border border-slate-700 drop-shadow-xl">
+                      {/* Clapper stick */}
                       <div className="h-7 w-full relative overflow-hidden border-b-2 border-slate-800 z-10 shrink-0">
                         <div className="flex w-[150%] h-full -ml-6">
                           {Array.from({ length: 10 }).map((_, i) => (
-                            <div key={`clap-${i}`} className={`w-8 h-full transform -skew-x-[35deg] ${i % 2 === 0 ? "bg-slate-200" : "bg-slate-950"}`} />
+                            <div key={`clap-${i}`} className={`w-8 h-full transform -skew-x-[35deg] ${i % 2 === 0 ? 'bg-slate-200' : 'bg-slate-950'}`}></div>
                           ))}
                         </div>
                       </div>
+
+                      {/* Clapper body */}
                       <div className="flex-1 flex flex-col p-2 bg-slate-800 shadow-inner relative justify-center items-center">
-                        <div className="text-4xl mt-3 drop-shadow-lg">📷</div>
+                        <div className="absolute top-1 left-2 text-[10px] text-slate-400 font-mono font-bold tracking-widest uppercase opacity-70">Scene</div>
+                        <div className="absolute top-1 right-2 text-[10px] text-slate-400 font-mono font-bold tracking-widest uppercase opacity-70">Take</div>
+
+                        {/* Center Icon */}
+                        <div className="text-4xl mt-3 drop-shadow-lg filter grayscale brightness-125">🎥</div>
                       </div>
                     </div>
                   </div>
-
                   <div className="absolute bottom-8 left-0 right-0 text-center font-black text-xl text-slate-200 uppercase tracking-[0.2em] shadow-black drop-shadow-lg">
-                    Photo Pack
+                    Movies Pack
                   </div>
                   <div className="absolute bottom-0 left-0 right-0 h-4 bg-gradient-to-t from-slate-600 to-slate-500 rounded-b-lg overflow-hidden flex">
                     {Array.from({ length: 20 }).map((_, i) => (
-                      <div key={`crimp-b-${i}`} className="flex-1 border-r border-slate-700/30" />
+                      <div key={`crimp-b-${i}`} className="flex-1 border-r border-slate-700/30"></div>
                     ))}
                   </div>
                 </div>
@@ -568,6 +693,7 @@ export default function Home() {
                   {activeCardIndex < cards.length - 1 ? "Next Card" : "Finish"}
                   <ChevronRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
                 </motion.button>
+
                 <motion.button
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 0.5 }}
@@ -594,6 +720,7 @@ export default function Home() {
                 >
                   <X className="w-5 h-5 group-hover:scale-110 transition-transform" />
                 </button>
+
                 <div className="flex flex-col sm:flex-row items-center gap-4">
                   <button
                     onClick={() => setIsGridView(true)}
@@ -616,7 +743,7 @@ export default function Home() {
         </div>
       </main>
 
-      {/* GRID / COLLECTION OVERLAY */}
+      {/* GRID OVERLAY */}
       <AnimatePresence>
         {(isGridView || isCollectionView) && (
           <motion.div
@@ -626,12 +753,14 @@ export default function Home() {
             className="fixed inset-0 z-50 bg-neutral-950/95 backdrop-blur-xl flex flex-col items-center p-6 sm:p-12 overflow-y-auto"
           >
             <button
-              onClick={() => { setIsGridView(false); setIsCollectionView(false); }}
+              onClick={() => {
+                setIsGridView(false);
+                setIsCollectionView(false);
+              }}
               className="absolute top-4 right-4 sm:top-8 sm:right-8 z-50 group flex items-center justify-center bg-white/10 hover:bg-white/20 backdrop-blur-md border border-white/20 text-white font-semibold p-2 sm:p-3 rounded-full shadow-lg transition-all"
             >
               <X className="w-5 h-5 sm:w-6 sm:h-6 group-hover:scale-110 transition-transform" />
             </button>
-
             <div className="w-full max-w-5xl flex flex-col items-center pb-24 mt-8 sm:mt-0">
               <h2 className="text-3xl font-bold mt-6 tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-600 mb-4 sm:mb-8">
                 {isCollectionView ? "My Collection" : "Pack Review"}
@@ -644,7 +773,7 @@ export default function Home() {
                     <span className="text-2xl font-black text-white">{collection.length}</span>
                   </div>
 
-                  <div className="h-px sm:h-12 w-full sm:w-px bg-white/10" />
+                  <div className="h-px sm:h-12 w-full sm:w-px bg-white/10"></div>
 
                   <div className="flex flex-col items-center sm:items-start w-full sm:w-auto relative flex-1">
                     <span className="text-white/50 text-xs font-semibold uppercase tracking-wider mb-1">Sort By</span>
@@ -656,12 +785,12 @@ export default function Home() {
                       >
                         <option value="rarity_high">Highest Rarity</option>
                         <option value="rarity_low">Lowest Rarity</option>
-                        <option value="views_high">Most Views</option>
-                        <option value="views_low">Least Views</option>
-                        <option value="favorites_high">Most Favorites</option>
-                        <option value="favorites_low">Least Favorites</option>
+                        <option value="rating_high">Highest Rating</option>
+                        <option value="rating_low">Lowest Rating</option>
                         <option value="name_asc">Name (A-Z)</option>
                         <option value="name_desc">Name (Z-A)</option>
+                        <option value="year_new">Newest Release</option>
+                        <option value="year_old">Oldest Release</option>
                       </select>
                       <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-white/70">
                         <svg className="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20">
@@ -671,7 +800,7 @@ export default function Home() {
                     </div>
                   </div>
 
-                  <div className="h-px sm:h-12 w-full sm:w-px bg-white/10 shrink-0" />
+                  <div className="h-px sm:h-12 w-full sm:w-px bg-white/10 shrink-0"></div>
 
                   <div className="flex flex-col items-center sm:items-start w-full sm:w-auto shrink-0">
                     <span className="text-white/50 text-xs font-semibold uppercase tracking-wider mb-1">Size</span>
@@ -684,8 +813,9 @@ export default function Home() {
                 </div>
               )}
 
-              {!isCollectionView && <div className="mb-8" />}
+              {!isCollectionView && <div className="mb-8"></div>}
 
+              {/* Empty State */}
               {isCollectionView && collection.length === 0 && (
                 <div className="text-center text-white/50 mt-12 flex flex-col items-center">
                   <div className="w-24 h-32 border-2 border-dashed border-white/20 rounded-xl mb-4 flex items-center justify-center">
@@ -696,17 +826,15 @@ export default function Home() {
                 </div>
               )}
 
-              <div className={`grid gap-2 sm:gap-4 justify-items-center w-full max-w-7xl mx-auto ${
-                gridSize === "sm" ? "grid-cols-2 min-[500px]:grid-cols-3 md:grid-cols-4 lg:grid-cols-5" :
+              <div className={`grid gap-2 sm:gap-4 justify-items-center w-full max-w-7xl mx-auto ${gridSize === "sm" ? "grid-cols-2 min-[500px]:grid-cols-3 md:grid-cols-4 lg:grid-cols-5" :
                 gridSize === "md" ? "grid-cols-2 min-[500px]:grid-cols-3" :
-                "grid-cols-1 min-[500px]:grid-cols-2"
-              }`}>
+                  "grid-cols-1 min-[500px]:grid-cols-2"
+                }`}>
                 {(isCollectionView
                   ? getGroupedCollection(getSortedCards(collection))
-                  : getSortedCards(cards).map((c) => ({ card: c, count: 1 }))
+                  : getSortedCards(cards).map(c => ({ card: c, count: 1 }))
                 ).map((item, idx) => {
                   const { card, count } = item;
-                  const col = getRarityColors(card.rarity);
                   const dims = gridSize === "sm"
                     ? { container: "w-[184px] h-[230px]", content: "w-[368px] h-[461px]", scale: 184 / 368 }
                     : gridSize === "md"
@@ -718,9 +846,12 @@ export default function Home() {
                       key={`grid-${card.id}-${idx}`}
                       initial={{ opacity: 0, scale: 0.8 }}
                       animate={{ opacity: 1, scale: 1 }}
-                      transition={{ delay: (idx % 10) * 0.05 }}
+                      transition={{ delay: (idx % 10) * 0.05 }} // modulo for large collections
                       className={`relative ${dims.container} cursor-pointer group transition-transform hover:scale-105`}
-                      onClick={() => window.open(card.sourceUrl, "_blank")}
+                      onClick={() => {
+                        if (card.imdb_link) window.open(card.imdb_link, "_blank");
+                        else if (card.trailer) window.open(card.trailer, "_blank");
+                      }}
                     >
                       {isCollectionView && count > 1 && (
                         <div className="absolute -top-2 -right-2 z-30 bg-purple-600 text-white text-xs font-black px-2 py-1 rounded-full shadow-lg border border-white/20">
@@ -731,21 +862,20 @@ export default function Home() {
                         className={`${dims.content} origin-top-left`}
                         style={{ transform: dims.scale !== 1 ? `scale(${dims.scale})` : "none" }}
                       >
-                        <div className={`w-full h-full bg-gradient-to-br ${col.bg} rounded-xl p-0.5 sm:p-1 shadow-2xl relative`}>
-                          <div className={`w-full h-full border sm:border-2 ${col.border} rounded-lg flex flex-col bg-black/50 backdrop-blur-sm relative overflow-hidden`}>
-                            {/* Image fill */}
-                            {card.imageUrl && (
+                        <div className={`w-full h-full bg-gradient-to-br ${getRarityColors(card.rarity).bg} rounded-xl p-0.5 sm:p-1 shadow-2xl relative`}>
+                          <div className={`w-full h-full border sm:border-2 ${getRarityColors(card.rarity).border} rounded-lg flex flex-col bg-black/50 backdrop-blur-sm relative overflow-hidden group`}>
+                            {/* Background Poster Cover */}
+                            {card.poster && (
                               <div
-                                className="absolute inset-0 bg-cover bg-center opacity-60 group-hover:opacity-100 transition-opacity duration-300"
-                                style={{ backgroundImage: `url(${card.imageUrl})` }}
+                                className="absolute inset-0 bg-cover bg-center opacity-40 group-hover:opacity-100 mix-blend-luminosity transition-opacity duration-300"
+                                style={{ backgroundImage: `url(${card.poster})` }}
                               />
                             )}
 
-                            {/* Top gradient + rarity */}
                             <div className="relative z-10 flex justify-between items-start w-full p-2 sm:p-3 bg-gradient-to-b from-black/80 to-transparent">
                               <div className="bg-black/50 backdrop-blur rounded px-1.5 py-0.5 sm:px-2 sm:py-1 flex items-center gap-0.5 sm:gap-1">
-                                <Sparkles className={`w-2 h-2 sm:w-3 sm:h-3 lg:w-4 lg:h-4 ${col.icon}`} />
-                                <span className={`text-[8px] sm:text-[10px] lg:text-xs font-bold uppercase tracking-wider ${col.text}`}>{card.rarity}</span>
+                                <Sparkles className={`w-2 h-2 sm:w-3 sm:h-3 lg:w-4 lg:h-4 ${getRarityColors(card.rarity).icon}`} />
+                                <span className={`text-[8px] sm:text-[10px] lg:text-xs font-bold uppercase tracking-wider ${getRarityColors(card.rarity).text}`}>{card.rarity}</span>
                               </div>
                               {!isCollectionView && newCardIds.has(card.id) && (
                                 <div className="absolute top-10 left-2 bg-red-600 text-white text-[8px] sm:text-[10px] font-black px-1.5 py-0.5 rounded shadow-lg uppercase">
@@ -753,27 +883,53 @@ export default function Home() {
                                 </div>
                               )}
                               <div className="bg-black/50 backdrop-blur rounded px-1.5 py-0.5 sm:px-2 sm:py-1">
-                                <span className="text-white/80 font-bold text-[10px] sm:text-xs lg:text-sm">👁 {formatCount(card.views)}</span>
+                                <span className="text-yellow-400 font-bold text-[10px] sm:text-xs lg:text-sm">⭐ {card.rating.toFixed(1)}</span>
                               </div>
                             </div>
 
-                            {/* Bottom: title + favorites */}
                             <div className="relative z-10 mt-auto p-2 sm:p-4 w-full flex flex-col items-center bg-gradient-to-t from-black/90 via-black/70 to-transparent">
                               <ScrollableTitle title={card.name} baseClass="text-xs sm:text-sm lg:text-lg font-black text-white uppercase tracking-tight drop-shadow-md leading-tight" />
-                              <span className="text-pink-400 font-bold text-[10px] sm:text-xs">❤️ {formatCount(card.favorites)}</span>
+                              {card.year && (
+                                <span className="text-[10px] sm:text-xs text-white/70 font-bold mb-1">{card.year}</span>
+                              )}
+                              <div className="flex gap-1.5 sm:gap-2 w-full justify-center mt-1 sm:mt-2">
+                                {card.trailer && (
+                                  <a href={card.trailer} target="_blank" rel="noopener noreferrer" className="bg-red-600 hover:bg-red-700 text-white text-[8px] sm:text-[10px] lg:text-xs font-bold py-1 px-1.5 sm:px-2 rounded shadow" onClick={(e) => e.stopPropagation()}>
+                                    Trailer
+                                  </a>
+                                )}
+                                {card.imdb_link && (
+                                  <a href={card.imdb_link} target="_blank" rel="noopener noreferrer" className="bg-[#f5c518] hover:bg-[#d6ab15] text-black text-[8px] sm:text-[10px] lg:text-xs font-bold py-1 px-1.5 sm:px-2 rounded shadow" onClick={(e) => e.stopPropagation()}>
+                                    IMDb
+                                  </a>
+                                )}
+                              </div>
                             </div>
                           </div>
-                          <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/20 to-transparent opacity-50 mix-blend-overlay rounded-xl pointer-events-none" />
+                          <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/20 to-transparent opacity-50 mix-blend-overlay rounded-xl pointer-events-none"></div>
                         </div>
                       </div>
                     </motion.div>
-                  );
+                  )
                 })}
               </div>
+
             </div>
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* TMDB ATTRIBUTION */}
+      <div className="absolute bottom-4 right-4 flex items-center gap-2 opacity-50 hover:opacity-100 transition-opacity z-40 pointer-events-auto">
+        <img
+          src="https://www.themoviedb.org/assets/2/v4/logos/v2/blue_short-8e7b30f73a4020692ccca9c88bafe5dcb6f8a62a4c6bc55cd9ba82bb2cd95f6c.svg"
+          alt="TMDB Logo"
+          className="h-3 sm:h-4 w-auto drop-shadow-md"
+        />
+        <span className="text-[8px] sm:text-[10px] text-white/70 max-w-[120px] sm:max-w-[150px] leading-tight font-medium text-right drop-shadow-md">
+          This product uses the TMDB API but is not endorsed or certified by TMDB.
+        </span>
+      </div>
     </div>
   );
 }
