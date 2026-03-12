@@ -31,18 +31,34 @@ export const fetchRandomMovies = async (count: number = 5): Promise<CardData[]> 
   }
 
   try {
-    // 1. Fetch a random page of popular movies (TMDB max page is 500)
-    const randomPage = Math.floor(Math.random() * 50) + 1; 
-    const res = await fetch(`${TMDB_BASE_URL}/movie/popular?api_key=${apiKey}&language=en-US&page=${randomPage}`);
-    if (!res.ok) throw new Error("Failed to fetch movies");
+    // 1. Determine how many pages we need (TMDB returns 20 per page)
+    const pagesNeeded = Math.ceil(count / 20);
+    const movieResults: any[] = [];
     
-    const data = await res.json();
-    const allMovies = data.results || [];
+    // Fetch unique random pages
+    const usedPages = new Set<number>();
+    while (usedPages.size < pagesNeeded) {
+      const randomPage = Math.floor(Math.random() * 100) + 1; 
+      usedPages.add(randomPage);
+    }
 
-    if (allMovies.length === 0) return [];
+    const pageResponses = await Promise.all(
+      Array.from(usedPages).map(page => 
+        fetch(`${TMDB_BASE_URL}/movie/popular?api_key=${apiKey}&language=en-US&page=${page}`)
+          .then(res => res.ok ? res.json() : { results: [] })
+      )
+    );
 
-    // 2. Shuffle and pick `count` movies
-    const shuffled = allMovies.sort(() => 0.5 - Math.random());
+    pageResponses.forEach(data => {
+      if (data.results) {
+        movieResults.push(...data.results);
+      }
+    });
+
+    if (movieResults.length === 0) return [];
+
+    // 2. Shuffle and pick exactly `count` movies
+    const shuffled = movieResults.sort(() => 0.5 - Math.random());
     const selectedMovies = shuffled.slice(0, count);
 
     // 3. Enhance with extra details in parallel

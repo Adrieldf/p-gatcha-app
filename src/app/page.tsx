@@ -23,8 +23,8 @@ const ScrollableTitle = ({ title, baseClass }: { title: string; baseClass: strin
   }, [title]);
 
   return (
-    <div 
-      ref={containerRef} 
+    <div
+      ref={containerRef}
       className={`w-full overflow-hidden mb-3 relative ${shouldScroll ? 'mask-image-edges' : 'flex justify-center'}`}
       style={shouldScroll ? { WebkitMaskImage: "linear-gradient(to right, transparent, black 10%, black 90%, transparent)", maskImage: "linear-gradient(to right, transparent, black 10%, black 90%, transparent)" } : {}}
     >
@@ -59,6 +59,7 @@ export default function Home() {
   const [isMuted, setIsMuted] = useState(false);
   const [newCardIds, setNewCardIds] = useState<Set<string>>(new Set());
   const [isAutoMode, setIsAutoMode] = useState(false);
+  const [packSize, setPackSize] = useState(5);
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -66,31 +67,38 @@ export default function Home() {
       if (params.get("auto") === "true") {
         setIsAutoMode(true);
       }
+      const countParam = params.get("count");
+      if (countParam) {
+        const parsedCount = parseInt(countParam, 10);
+        if (!isNaN(parsedCount)) {
+          setPackSize(Math.max(1, Math.min(100, parsedCount)));
+        }
+      }
     }
   }, []);
 
   const playSound = useCallback((type: "tear" | "flip" | "sparkle" | "swoosh" | Rarity) => {
     if (isMuted) return;
-    
+
     const urls = {
       tear: "https://assets.mixkit.co/active_storage/sfx/147/147-preview.mp3", // tear
       flip: "https://assets.mixkit.co/active_storage/sfx/2019/2019-preview.mp3", // simple flip
       swoosh: "https://assets.mixkit.co/active_storage/sfx/2000/2000-preview.mp3", // move
       sparkle: "https://assets.mixkit.co/active_storage/sfx/1998/1998-preview.mp3", // Cinematic magic whoosh
-      Common: "https://assets.mixkit.co/active_storage/sfx/2019/2019-preview.mp3", 
+      Common: "https://assets.mixkit.co/active_storage/sfx/2019/2019-preview.mp3",
       Uncommon: "https://assets.mixkit.co/active_storage/sfx/2000/2000-preview.mp3",
-      Rare: "https://assets.mixkit.co/active_storage/sfx/2018/2018-preview.mp3", 
+      Rare: "https://assets.mixkit.co/active_storage/sfx/2018/2018-preview.mp3",
       Epic: "https://assets.mixkit.co/active_storage/sfx/2013/2013-preview.mp3",
       Legendary: "https://assets.mixkit.co/active_storage/sfx/1998/1998-preview.mp3"
     };
 
     const audio = new Audio(urls[type as keyof typeof urls] || urls.flip);
-    
-    let baseVolume = 0.08; 
+
+    let baseVolume = 0.08;
     if (type === "Legendary" || type === "sparkle") baseVolume = 0.4; // High impact
     if (type === "Epic") baseVolume = 0.15;
     if (type === "Rare") baseVolume = 0.12;
-    
+
     audio.volume = baseVolume;
     audio.play().catch(e => console.log("Audio play blocked", e));
 
@@ -110,13 +118,13 @@ export default function Home() {
   // Effect to sync reveal sounds with flip state
   useEffect(() => {
     if (packState !== "revealing") return;
-    
+
     if (flippedCards[activeCardIndex] && !playedRevealSounds.current.has(activeCardIndex)) {
       const card = cards[activeCardIndex];
       if (card) {
         playedRevealSounds.current.add(activeCardIndex);
         playSound(card.rarity);
-        
+
         if (card.rarity === "Legendary") {
           confetti({
             particleCount: 150,
@@ -131,7 +139,7 @@ export default function Home() {
 
   useEffect(() => {
     let timeout: NodeJS.Timeout;
-    if (packState === "revealing" && flippedCards[activeCardIndex]) {
+    if (!isAutoMode && packState === "revealing" && flippedCards[activeCardIndex]) {
       timeout = setTimeout(() => {
         setShowTrailerIdx(activeCardIndex);
       }, 3000);
@@ -139,7 +147,7 @@ export default function Home() {
       setShowTrailerIdx(null);
     }
     return () => clearTimeout(timeout);
-  }, [packState, flippedCards, activeCardIndex]);
+  }, [packState, flippedCards, activeCardIndex, isAutoMode]);
 
   useEffect(() => {
     const saved = localStorage.getItem("gacha_collection");
@@ -161,9 +169,8 @@ export default function Home() {
     if (isOpenedRef.current) return;
     isOpenedRef.current = true;
     setIsLoading(true);
+    const fetchedCards = await fetchRandomMovies(packSize);
 
-    const fetchedCards = await fetchRandomMovies(5);
-    
     // Check which IDs are new
     const existingIds = new Set(collection.map(c => c.id));
     const newlyFoundIds = new Set<string>();
@@ -173,7 +180,7 @@ export default function Home() {
       }
     });
     setNewCardIds(newlyFoundIds);
-    
+
     setCards(fetchedCards);
     setIsLoading(false);
 
@@ -185,7 +192,7 @@ export default function Home() {
 
     setPackState("opened");
     setTearProgress(100);
-    
+
     controls.start({
       y: -150,
       x: 100,
@@ -197,7 +204,7 @@ export default function Home() {
     setTimeout(() => {
       setPackState("revealing");
     }, 800);
-  }, [controls, collection]);
+  }, [controls, collection, packSize]);
 
   const updateTear = (clientX: number) => {
     if (topPartRef.current && !isOpenedRef.current) {
@@ -259,6 +266,16 @@ export default function Home() {
     }
   };
 
+  const handleSkipAll = () => {
+    const allFlipped: Record<number, boolean> = {};
+    cards.forEach((_, idx) => {
+      allFlipped[idx] = true;
+    });
+    setFlippedCards(allFlipped);
+    setPackState("done");
+    setActiveCardIndex(cards.length - 1);
+  };
+
   useEffect(() => {
     if (!isAutoMode) return;
 
@@ -279,7 +296,7 @@ export default function Home() {
       } else {
         const timer = setTimeout(() => {
           handleNextCard();
-        }, 2500);
+        }, 6000);
         return () => clearTimeout(timer);
       }
     }
@@ -394,7 +411,12 @@ export default function Home() {
             Pack Opener
           </h1>
           <div className="flex items-center gap-2 pointer-events-auto">
-            <button 
+            {isAutoMode && (
+              <div className="bg-red-600/20 border border-red-500/50 px-2 py-1 rounded text-[10px] font-black text-red-400 tracking-tighter animate-pulse uppercase">
+                Auto Mode
+              </div>
+            )}
+            <button
               onClick={() => setIsMuted(!isMuted)}
               className="bg-white/10 hover:bg-white/20 backdrop-blur-md border border-white/20 text-white p-2 rounded-full shadow-lg transition-all group"
               title={isMuted ? "Unmute" : "Mute"}
@@ -405,7 +427,7 @@ export default function Home() {
                 <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" /></svg>
               )}
             </button>
-            <button 
+            <button
               onClick={() => setIsCollectionView(true)}
               className="bg-white/10 hover:bg-white/20 backdrop-blur-md border border-white/20 text-white font-semibold py-2 px-3 sm:px-4 rounded-full shadow-lg transition-all text-xs sm:text-sm flex items-center gap-1 sm:gap-2"
             >
@@ -422,7 +444,7 @@ export default function Home() {
           <AnimatePresence>
             {(packState === "revealing" || packState === "done") && cards.map((card, idx) => {
               if (packState === "revealing" && idx !== activeCardIndex) return null;
-              
+
               const isFlipped = flippedCards[idx] || packState === "done";
               const zIndex = packState === "done" ? cards.length - idx : 20;
 
@@ -438,10 +460,10 @@ export default function Home() {
                 <motion.div
                   key={card.id}
                   initial={{ y: 50, scale: 0.8, opacity: 0 }}
-                  animate={{ 
-                    y: packState === "done" ? idx * 10 - 20 : 0, 
+                  animate={{
+                    y: packState === "done" ? idx * 10 - 20 : 0,
                     x: packState === "done" ? (idx - 2) * 20 : 0,
-                    scale: packState === "done" ? 0.9 : 1, 
+                    scale: packState === "done" ? 0.9 : 1,
                     opacity: 1,
                     rotate: packState === "done" ? (idx - 2) * 5 : 0
                   }}
@@ -479,19 +501,19 @@ export default function Home() {
                       <div className="absolute right-1 top-0 bottom-0 w-3 flex flex-col py-1 space-y-1.5 opacity-30">
                         {Array.from({ length: 24 }).map((_, i) => <div key={`r-${i}`} className="w-full h-2 bg-black rounded-sm"></div>)}
                       </div>
-                      
+
                       <div className="w-24 h-24 rounded-full border-2 border-slate-500/30 flex items-center justify-center p-2 mb-4 relative drop-shadow-xl">
                         <div className="absolute inset-2 rounded-full border border-dashed border-slate-400/60 animate-[spin_20s_linear_infinite]"></div>
                         <div className="text-4xl filter grayscale brightness-150">🎬</div>
                       </div>
 
                       <div className="text-slate-300 font-black text-xl tracking-[0.2em] font-serif text-center drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)]">
-                        CINEMA<br/>COLLECTION
+                        CINEMA<br />COLLECTION
                       </div>
 
                       {packState === "revealing" && !isFlipped && (
-                        <div className="absolute bottom-6 left-0 right-0 text-center text-xs font-bold tracking-widest text-slate-400/80 animate-pulse">
-                          TAP TO FLIP
+                        <div className="absolute bottom-6 left-0 right-0 text-center text-[10px] font-black tracking-[0.2em] text-slate-400/80 animate-pulse uppercase">
+                          {isAutoMode ? "Auto-Revealing..." : "Tap to Flip"}
                         </div>
                       )}
                     </div>
@@ -504,7 +526,7 @@ export default function Home() {
                       <div className={`w-full h-full border-2 ${getRarityColors(card.rarity).border} rounded-lg flex flex-col bg-black/40 backdrop-blur-sm relative overflow-hidden`}>
                         {/* Background Poster Cover */}
                         {card.poster && (
-                          <div 
+                          <div
                             className="absolute inset-0 bg-cover bg-center opacity-80 mix-blend-overlay transition-opacity duration-1000"
                             style={{ backgroundImage: `url(${card.poster})`, opacity: showTrailerIdx === idx && youtubeId ? 0 : 0.8 }}
                           />
@@ -527,26 +549,26 @@ export default function Home() {
                         <div className="absolute inset-x-0 top-0 h-1/2 bg-gradient-to-b from-black/80 via-black/30 to-transparent" />
                         <div className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-black/90 via-black/60 to-transparent" />
 
-                         {/* Top Area: Rarity & Rating */}
+                        {/* Top Area: Rarity & Rating */}
                         <div className="relative z-10 flex justify-between items-start w-full p-3">
-                           <div className="flex flex-col gap-1">
-                             <div className="bg-black/50 backdrop-blur rounded px-2 py-1 flex items-center gap-1">
-                               <Sparkles className={`w-4 h-4 ${getRarityColors(card.rarity).icon}`} />
-                               <span className={`text-xs font-bold uppercase tracking-wider ${getRarityColors(card.rarity).text}`}>{card.rarity}</span>
-                             </div>
-                             {newCardIds.has(card.id) && (
-                               <motion.div 
-                                 initial={{ scale: 0 }}
-                                 animate={{ scale: 1 }}
-                                 className="bg-red-600 text-white text-[10px] font-black px-2 py-0.5 rounded shadow-lg uppercase tracking-tighter w-fit"
-                               >
-                                 New!
-                               </motion.div>
-                             )}
-                           </div>
-                           <div className="bg-black/50 backdrop-blur rounded px-2 py-1">
-                             <span className="text-yellow-400 font-bold text-sm">⭐ {card.rating.toFixed(1)}</span>
-                           </div>
+                          <div className="flex flex-col gap-1">
+                            <div className="bg-black/50 backdrop-blur rounded px-2 py-1 flex items-center gap-1">
+                              <Sparkles className={`w-4 h-4 ${getRarityColors(card.rarity).icon}`} />
+                              <span className={`text-xs font-bold uppercase tracking-wider ${getRarityColors(card.rarity).text}`}>{card.rarity}</span>
+                            </div>
+                            {newCardIds.has(card.id) && (
+                              <motion.div
+                                initial={{ scale: 0 }}
+                                animate={{ scale: 1 }}
+                                className="bg-red-600 text-white text-[10px] font-black px-2 py-0.5 rounded shadow-lg uppercase tracking-tighter w-fit"
+                              >
+                                New!
+                              </motion.div>
+                            )}
+                          </div>
+                          <div className="bg-black/50 backdrop-blur rounded px-2 py-1">
+                            <span className="text-yellow-400 font-bold text-sm">⭐ {card.rating.toFixed(1)}</span>
+                          </div>
                         </div>
 
                         {/* Bottom Area: Title & Links */}
@@ -611,7 +633,7 @@ export default function Home() {
                 {/* BOTTOM MAIN BODY */}
                 <div className="h-3/4 w-full bg-gradient-to-b from-slate-800 to-black relative rounded-b-lg overflow-hidden shadow-2xl border-t border-slate-700">
                   <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-10 mix-blend-overlay"></div>
-                  
+
                   {/* Film reel details */}
                   <div className="absolute left-4 top-0 bottom-0 w-4 flex flex-col py-4 space-y-3 opacity-20 mix-blend-overlay">
                     {Array.from({ length: 8 }).map((_, i) => <div key={`fl-${i}`} className="w-full h-8 bg-white rounded-sm"></div>)}
@@ -630,12 +652,12 @@ export default function Home() {
                           ))}
                         </div>
                       </div>
-                      
+
                       {/* Clapper body */}
                       <div className="flex-1 flex flex-col p-2 bg-slate-800 shadow-inner relative justify-center items-center">
                         <div className="absolute top-1 left-2 text-[10px] text-slate-400 font-mono font-bold tracking-widest uppercase opacity-70">Scene</div>
                         <div className="absolute top-1 right-2 text-[10px] text-slate-400 font-mono font-bold tracking-widest uppercase opacity-70">Take</div>
-                        
+
                         {/* Center Icon */}
                         <div className="text-4xl mt-3 drop-shadow-lg filter grayscale brightness-125">🎥</div>
                       </div>
@@ -656,20 +678,32 @@ export default function Home() {
         </div>
 
         {/* CONTROLS */}
-        <div className="h-24 flex items-center justify-center w-full z-40 mt-8">
+        <div className="min-h-[120px] flex items-center justify-center w-full z-40 mt-8">
           <AnimatePresence mode="wait">
             {packState === "revealing" && flippedCards[activeCardIndex] && (
-              <motion.button
-                key="next-btn"
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -10 }}
-                onClick={handleNextCard}
-                className="group flex items-center gap-2 bg-white/10 hover:bg-white/20 backdrop-blur-md border border-white/20 text-white font-semibold py-3 px-8 rounded-full shadow-lg transition-all"
-              >
-                {activeCardIndex < cards.length - 1 ? "Next Card" : "Finish"}
-                <ChevronRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
-              </motion.button>
+              <div className="flex flex-col items-center gap-4">
+                <motion.button
+                  key="next-btn"
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                  onClick={handleNextCard}
+                  className="group flex items-center gap-2 bg-white/10 hover:bg-white/20 backdrop-blur-md border border-white/20 text-white font-semibold py-3 px-8 rounded-full shadow-lg transition-all"
+                >
+                  {activeCardIndex < cards.length - 1 ? "Next Card" : "Finish"}
+                  <ChevronRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
+                </motion.button>
+
+                <motion.button
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 0.5 }}
+                  whileHover={{ opacity: 1 }}
+                  onClick={handleSkipAll}
+                  className="text-white/40 hover:text-white/90 text-[10px] font-black uppercase tracking-[0.3em] transition-all h-8"
+                >
+                  Skip to End
+                </motion.button>
+              </div>
             )}
 
             {packState === "done" && (
@@ -679,7 +713,7 @@ export default function Home() {
                 animate={{ opacity: 1, scale: 1 }}
                 className="flex flex-col items-center gap-6"
               >
-                <button 
+                <button
                   onClick={resetPack}
                   className="bg-white/10 hover:bg-white/20 backdrop-blur-md border border-white/20 text-white p-3 rounded-full shadow-lg transition-all group"
                   title="Close Pack"
@@ -738,14 +772,14 @@ export default function Home() {
                     <span className="text-white/50 text-xs font-semibold uppercase tracking-wider mb-1">Total Cards</span>
                     <span className="text-2xl font-black text-white">{collection.length}</span>
                   </div>
-                  
+
                   <div className="h-px sm:h-12 w-full sm:w-px bg-white/10"></div>
-                  
+
                   <div className="flex flex-col items-center sm:items-start w-full sm:w-auto relative flex-1">
                     <span className="text-white/50 text-xs font-semibold uppercase tracking-wider mb-1">Sort By</span>
                     <div className="relative w-full">
-                      <select 
-                        value={sortBy} 
+                      <select
+                        value={sortBy}
                         onChange={(e) => setSortBy(e.target.value as SortOption)}
                         className="appearance-none w-full bg-black/40 border border-white/20 text-white font-medium text-sm rounded-lg pl-3 pr-8 py-2 outline-none focus:ring-2 focus:ring-purple-500/50 focus:border-purple-500/50 transition-all cursor-pointer hover:bg-black/60 shadow-inner"
                       >
@@ -778,7 +812,7 @@ export default function Home() {
                   </div>
                 </div>
               )}
-              
+
               {!isCollectionView && <div className="mb-8"></div>}
 
               {/* Empty State */}
@@ -792,92 +826,92 @@ export default function Home() {
                 </div>
               )}
 
-              <div className={`grid gap-2 sm:gap-4 justify-items-center w-full max-w-7xl mx-auto ${
-                gridSize === "sm" ? "grid-cols-2 min-[500px]:grid-cols-3 md:grid-cols-4 lg:grid-cols-5" : 
-                gridSize === "md" ? "grid-cols-2 min-[500px]:grid-cols-3" : 
-                "grid-cols-1 min-[500px]:grid-cols-2"
-              }`}>
-                {(isCollectionView 
-                  ? getGroupedCollection(getSortedCards(collection)) 
+              <div className={`grid gap-2 sm:gap-4 justify-items-center w-full max-w-7xl mx-auto ${gridSize === "sm" ? "grid-cols-2 min-[500px]:grid-cols-3 md:grid-cols-4 lg:grid-cols-5" :
+                gridSize === "md" ? "grid-cols-2 min-[500px]:grid-cols-3" :
+                  "grid-cols-1 min-[500px]:grid-cols-2"
+                }`}>
+                {(isCollectionView
+                  ? getGroupedCollection(getSortedCards(collection))
                   : getSortedCards(cards).map(c => ({ card: c, count: 1 }))
                 ).map((item, idx) => {
                   const { card, count } = item;
-                   const dims = gridSize === "sm" 
+                  const dims = gridSize === "sm"
                     ? { container: "w-[184px] h-[230px]", content: "w-[368px] h-[461px]", scale: 184 / 368 }
                     : gridSize === "md"
-                    ? { container: "w-[276px] h-[345px]", content: "w-[368px] h-[461px]", scale: 276 / 368 }
-                    : { container: "w-[200px] h-[250px] sm:w-[280px] sm:h-[350px] lg:w-[368px] lg:h-[461px]", content: "w-full h-full", scale: 1 };
+                      ? { container: "w-[276px] h-[345px]", content: "w-[368px] h-[461px]", scale: 276 / 368 }
+                      : { container: "w-[200px] h-[250px] sm:w-[280px] sm:h-[350px] lg:w-[368px] lg:h-[461px]", content: "w-full h-full", scale: 1 };
 
                   return (
-                  <motion.div 
-                    key={`grid-${card.id}-${idx}`}
-                    initial={{ opacity: 0, scale: 0.8 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    transition={{ delay: (idx % 10) * 0.05 }} // modulo for large collections
-                    className={`relative ${dims.container} cursor-pointer group transition-transform hover:scale-105`}
-                    onClick={() => {
-                      if (card.imdb_link) window.open(card.imdb_link, "_blank");
-                      else if (card.trailer) window.open(card.trailer, "_blank");
-                    }}
-                  >
-                    {isCollectionView && count > 1 && (
-                      <div className="absolute -top-2 -right-2 z-30 bg-purple-600 text-white text-xs font-black px-2 py-1 rounded-full shadow-lg border border-white/20">
-                        x{count}
-                      </div>
-                    )}
-                    <div 
-                      className={`${dims.content} origin-top-left`} 
-                      style={{ transform: dims.scale !== 1 ? `scale(${dims.scale})` : "none" }}
+                    <motion.div
+                      key={`grid-${card.id}-${idx}`}
+                      initial={{ opacity: 0, scale: 0.8 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      transition={{ delay: (idx % 10) * 0.05 }} // modulo for large collections
+                      className={`relative ${dims.container} cursor-pointer group transition-transform hover:scale-105`}
+                      onClick={() => {
+                        if (card.imdb_link) window.open(card.imdb_link, "_blank");
+                        else if (card.trailer) window.open(card.trailer, "_blank");
+                      }}
                     >
-                    <div className={`w-full h-full bg-gradient-to-br ${getRarityColors(card.rarity).bg} rounded-xl p-0.5 sm:p-1 shadow-2xl relative`}>
-                      <div className={`w-full h-full border sm:border-2 ${getRarityColors(card.rarity).border} rounded-lg flex flex-col bg-black/50 backdrop-blur-sm relative overflow-hidden group`}>
-                        {/* Background Poster Cover */}
-                        {card.poster && (
-                          <div 
-                            className="absolute inset-0 bg-cover bg-center opacity-40 group-hover:opacity-100 mix-blend-luminosity transition-opacity duration-300"
-                            style={{ backgroundImage: `url(${card.poster})` }}
-                          />
-                        )}
-
-                        <div className="relative z-10 flex justify-between items-start w-full p-2 sm:p-3 bg-gradient-to-b from-black/80 to-transparent">
-                           <div className="bg-black/50 backdrop-blur rounded px-1.5 py-0.5 sm:px-2 sm:py-1 flex items-center gap-0.5 sm:gap-1">
-                             <Sparkles className={`w-2 h-2 sm:w-3 sm:h-3 lg:w-4 lg:h-4 ${getRarityColors(card.rarity).icon}`} />
-                             <span className={`text-[8px] sm:text-[10px] lg:text-xs font-bold uppercase tracking-wider ${getRarityColors(card.rarity).text}`}>{card.rarity}</span>
-                           </div>
-                           {!isCollectionView && newCardIds.has(card.id) && (
-                             <div className="absolute top-10 left-2 bg-red-600 text-white text-[8px] sm:text-[10px] font-black px-1.5 py-0.5 rounded shadow-lg uppercase">
-                               New!
-                             </div>
-                           )}
-                           <div className="bg-black/50 backdrop-blur rounded px-1.5 py-0.5 sm:px-2 sm:py-1">
-                             <span className="text-yellow-400 font-bold text-[10px] sm:text-xs lg:text-sm">⭐ {card.rating.toFixed(1)}</span>
-                           </div>
+                      {isCollectionView && count > 1 && (
+                        <div className="absolute -top-2 -right-2 z-30 bg-purple-600 text-white text-xs font-black px-2 py-1 rounded-full shadow-lg border border-white/20">
+                          x{count}
                         </div>
+                      )}
+                      <div
+                        className={`${dims.content} origin-top-left`}
+                        style={{ transform: dims.scale !== 1 ? `scale(${dims.scale})` : "none" }}
+                      >
+                        <div className={`w-full h-full bg-gradient-to-br ${getRarityColors(card.rarity).bg} rounded-xl p-0.5 sm:p-1 shadow-2xl relative`}>
+                          <div className={`w-full h-full border sm:border-2 ${getRarityColors(card.rarity).border} rounded-lg flex flex-col bg-black/50 backdrop-blur-sm relative overflow-hidden group`}>
+                            {/* Background Poster Cover */}
+                            {card.poster && (
+                              <div
+                                className="absolute inset-0 bg-cover bg-center opacity-40 group-hover:opacity-100 mix-blend-luminosity transition-opacity duration-300"
+                                style={{ backgroundImage: `url(${card.poster})` }}
+                              />
+                            )}
 
-                        <div className="relative z-10 mt-auto p-2 sm:p-4 w-full flex flex-col items-center bg-gradient-to-t from-black/90 via-black/70 to-transparent">
-                           <ScrollableTitle title={card.name} baseClass="text-xs sm:text-sm lg:text-lg font-black text-white uppercase tracking-tight drop-shadow-md leading-tight" />
-                           {card.year && (
-                             <span className="text-[10px] sm:text-xs text-white/70 font-bold mb-1">{card.year}</span>
-                           )}
-                           <div className="flex gap-1.5 sm:gap-2 w-full justify-center mt-1 sm:mt-2">
-                             {card.trailer && (
-                              <a href={card.trailer} target="_blank" rel="noopener noreferrer" className="bg-red-600 hover:bg-red-700 text-white text-[8px] sm:text-[10px] lg:text-xs font-bold py-1 px-1.5 sm:px-2 rounded shadow" onClick={(e) => e.stopPropagation()}>
-                                Trailer
-                              </a>
-                            )}
-                            {card.imdb_link && (
-                              <a href={card.imdb_link} target="_blank" rel="noopener noreferrer" className="bg-[#f5c518] hover:bg-[#d6ab15] text-black text-[8px] sm:text-[10px] lg:text-xs font-bold py-1 px-1.5 sm:px-2 rounded shadow" onClick={(e) => e.stopPropagation()}>
-                                IMDb
-                              </a>
-                            )}
+                            <div className="relative z-10 flex justify-between items-start w-full p-2 sm:p-3 bg-gradient-to-b from-black/80 to-transparent">
+                              <div className="bg-black/50 backdrop-blur rounded px-1.5 py-0.5 sm:px-2 sm:py-1 flex items-center gap-0.5 sm:gap-1">
+                                <Sparkles className={`w-2 h-2 sm:w-3 sm:h-3 lg:w-4 lg:h-4 ${getRarityColors(card.rarity).icon}`} />
+                                <span className={`text-[8px] sm:text-[10px] lg:text-xs font-bold uppercase tracking-wider ${getRarityColors(card.rarity).text}`}>{card.rarity}</span>
+                              </div>
+                              {!isCollectionView && newCardIds.has(card.id) && (
+                                <div className="absolute top-10 left-2 bg-red-600 text-white text-[8px] sm:text-[10px] font-black px-1.5 py-0.5 rounded shadow-lg uppercase">
+                                  New!
+                                </div>
+                              )}
+                              <div className="bg-black/50 backdrop-blur rounded px-1.5 py-0.5 sm:px-2 sm:py-1">
+                                <span className="text-yellow-400 font-bold text-[10px] sm:text-xs lg:text-sm">⭐ {card.rating.toFixed(1)}</span>
+                              </div>
+                            </div>
+
+                            <div className="relative z-10 mt-auto p-2 sm:p-4 w-full flex flex-col items-center bg-gradient-to-t from-black/90 via-black/70 to-transparent">
+                              <ScrollableTitle title={card.name} baseClass="text-xs sm:text-sm lg:text-lg font-black text-white uppercase tracking-tight drop-shadow-md leading-tight" />
+                              {card.year && (
+                                <span className="text-[10px] sm:text-xs text-white/70 font-bold mb-1">{card.year}</span>
+                              )}
+                              <div className="flex gap-1.5 sm:gap-2 w-full justify-center mt-1 sm:mt-2">
+                                {card.trailer && (
+                                  <a href={card.trailer} target="_blank" rel="noopener noreferrer" className="bg-red-600 hover:bg-red-700 text-white text-[8px] sm:text-[10px] lg:text-xs font-bold py-1 px-1.5 sm:px-2 rounded shadow" onClick={(e) => e.stopPropagation()}>
+                                    Trailer
+                                  </a>
+                                )}
+                                {card.imdb_link && (
+                                  <a href={card.imdb_link} target="_blank" rel="noopener noreferrer" className="bg-[#f5c518] hover:bg-[#d6ab15] text-black text-[8px] sm:text-[10px] lg:text-xs font-bold py-1 px-1.5 sm:px-2 rounded shadow" onClick={(e) => e.stopPropagation()}>
+                                    IMDb
+                                  </a>
+                                )}
+                              </div>
+                            </div>
                           </div>
+                          <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/20 to-transparent opacity-50 mix-blend-overlay rounded-xl pointer-events-none"></div>
                         </div>
                       </div>
-                      <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/20 to-transparent opacity-50 mix-blend-overlay rounded-xl pointer-events-none"></div>
-                    </div>
-                    </div>
-                  </motion.div>
-                )})}
+                    </motion.div>
+                  )
+                })}
               </div>
 
             </div>
@@ -887,10 +921,10 @@ export default function Home() {
 
       {/* TMDB ATTRIBUTION */}
       <div className="absolute bottom-4 right-4 flex items-center gap-2 opacity-50 hover:opacity-100 transition-opacity z-40 pointer-events-auto">
-        <img 
-          src="https://www.themoviedb.org/assets/2/v4/logos/v2/blue_short-8e7b30f73a4020692ccca9c88bafe5dcb6f8a62a4c6bc55cd9ba82bb2cd95f6c.svg" 
-          alt="TMDB Logo" 
-          className="h-3 sm:h-4 w-auto drop-shadow-md" 
+        <img
+          src="https://www.themoviedb.org/assets/2/v4/logos/v2/blue_short-8e7b30f73a4020692ccca9c88bafe5dcb6f8a62a4c6bc55cd9ba82bb2cd95f6c.svg"
+          alt="TMDB Logo"
+          className="h-3 sm:h-4 w-auto drop-shadow-md"
         />
         <span className="text-[8px] sm:text-[10px] text-white/70 max-w-[120px] sm:max-w-[150px] leading-tight font-medium text-right drop-shadow-md">
           This product uses the TMDB API but is not endorsed or certified by TMDB.
