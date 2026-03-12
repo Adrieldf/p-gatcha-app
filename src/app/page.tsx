@@ -54,9 +54,10 @@ export default function Home() {
   const [collection, setCollection] = useState<CardData[]>([]);
   const [isCollectionView, setIsCollectionView] = useState(false);
   const [sortBy, setSortBy] = useState<SortOption>("rarity_high");
-  const [gridSize, setGridSize] = useState<"sm" | "md" | "lg">("lg");
+  const [gridSize, setGridSize] = useState<"sm" | "md" | "lg">("md");
   const [showTrailerIdx, setShowTrailerIdx] = useState<number | null>(null);
   const [isMuted, setIsMuted] = useState(false);
+  const [newCardIds, setNewCardIds] = useState<Set<string>>(new Set());
 
   const playSound = useCallback((type: "tear" | "flip" | "sparkle" | "swoosh" | Rarity) => {
     if (isMuted) return;
@@ -152,6 +153,17 @@ export default function Home() {
     setIsLoading(true);
 
     const fetchedCards = await fetchRandomMovies(5);
+    
+    // Check which IDs are new
+    const existingIds = new Set(collection.map(c => c.id));
+    const newlyFoundIds = new Set<string>();
+    fetchedCards.forEach(c => {
+      if (!existingIds.has(c.id)) {
+        newlyFoundIds.add(c.id);
+      }
+    });
+    setNewCardIds(newlyFoundIds);
+    
     setCards(fetchedCards);
     setIsLoading(false);
 
@@ -246,6 +258,7 @@ export default function Home() {
     setFlippedCards({});
     setIsGridView(false);
     setShowTrailerIdx(null);
+    setNewCardIds(new Set());
     playedRevealSounds.current.clear();
     controls.set({ x: 0, y: 0, opacity: 1, rotate: 0 });
   };
@@ -296,6 +309,18 @@ export default function Home() {
     Rare: 2,
     Epic: 3,
     Legendary: 4,
+  };
+
+  const getGroupedCollection = (cardList: CardData[]) => {
+    const groups: Map<string, { card: CardData; count: number }> = new Map();
+    cardList.forEach(card => {
+      if (groups.has(card.id)) {
+        groups.get(card.id)!.count++;
+      } else {
+        groups.set(card.id, { card, count: 1 });
+      }
+    });
+    return Array.from(groups.values());
   };
 
   const getSortedCards = (cardList: CardData[]) => {
@@ -465,11 +490,22 @@ export default function Home() {
                         <div className="absolute inset-x-0 top-0 h-1/2 bg-gradient-to-b from-black/80 via-black/30 to-transparent" />
                         <div className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-black/90 via-black/60 to-transparent" />
 
-                        {/* Top Area: Rarity & Rating */}
+                         {/* Top Area: Rarity & Rating */}
                         <div className="relative z-10 flex justify-between items-start w-full p-3">
-                           <div className="bg-black/50 backdrop-blur rounded px-2 py-1 flex items-center gap-1">
-                             <Sparkles className={`w-4 h-4 ${getRarityColors(card.rarity).icon}`} />
-                             <span className={`text-xs font-bold uppercase tracking-wider ${getRarityColors(card.rarity).text}`}>{card.rarity}</span>
+                           <div className="flex flex-col gap-1">
+                             <div className="bg-black/50 backdrop-blur rounded px-2 py-1 flex items-center gap-1">
+                               <Sparkles className={`w-4 h-4 ${getRarityColors(card.rarity).icon}`} />
+                               <span className={`text-xs font-bold uppercase tracking-wider ${getRarityColors(card.rarity).text}`}>{card.rarity}</span>
+                             </div>
+                             {newCardIds.has(card.id) && (
+                               <motion.div 
+                                 initial={{ scale: 0 }}
+                                 animate={{ scale: 1 }}
+                                 className="bg-red-600 text-white text-[10px] font-black px-2 py-0.5 rounded shadow-lg uppercase tracking-tighter w-fit"
+                               >
+                                 New!
+                               </motion.div>
+                             )}
                            </div>
                            <div className="bg-black/50 backdrop-blur rounded px-2 py-1">
                              <span className="text-yellow-400 font-bold text-sm">⭐ {card.rating.toFixed(1)}</span>
@@ -719,12 +755,20 @@ export default function Home() {
                 </div>
               )}
 
-              <div className="flex flex-wrap justify-center gap-6 sm:gap-8">
-                {getSortedCards(isCollectionView ? collection : cards).map((card, idx) => {
-                  const dims = gridSize === "sm" 
-                    ? { container: "w-[147px] h-[184px]", content: "w-[368px] h-[461px]", scale: 147 / 368 }
-                    : gridSize === "md"
+              <div className={`grid gap-2 sm:gap-4 justify-items-center w-full max-w-7xl mx-auto ${
+                gridSize === "sm" ? "grid-cols-2 min-[500px]:grid-cols-3 md:grid-cols-4 lg:grid-cols-5" : 
+                gridSize === "md" ? "grid-cols-2 min-[500px]:grid-cols-3" : 
+                "grid-cols-1 min-[500px]:grid-cols-2"
+              }`}>
+                {(isCollectionView 
+                  ? getGroupedCollection(getSortedCards(collection)) 
+                  : getSortedCards(cards).map(c => ({ card: c, count: 1 }))
+                ).map((item, idx) => {
+                  const { card, count } = item;
+                   const dims = gridSize === "sm" 
                     ? { container: "w-[184px] h-[230px]", content: "w-[368px] h-[461px]", scale: 184 / 368 }
+                    : gridSize === "md"
+                    ? { container: "w-[276px] h-[345px]", content: "w-[368px] h-[461px]", scale: 276 / 368 }
                     : { container: "w-[200px] h-[250px] sm:w-[280px] sm:h-[350px] lg:w-[368px] lg:h-[461px]", content: "w-full h-full", scale: 1 };
 
                   return (
@@ -739,6 +783,11 @@ export default function Home() {
                       else if (card.trailer) window.open(card.trailer, "_blank");
                     }}
                   >
+                    {isCollectionView && count > 1 && (
+                      <div className="absolute -top-2 -right-2 z-30 bg-purple-600 text-white text-xs font-black px-2 py-1 rounded-full shadow-lg border border-white/20">
+                        x{count}
+                      </div>
+                    )}
                     <div 
                       className={`${dims.content} origin-top-left`} 
                       style={{ transform: dims.scale !== 1 ? `scale(${dims.scale})` : "none" }}
@@ -758,6 +807,11 @@ export default function Home() {
                              <Sparkles className={`w-2 h-2 sm:w-3 sm:h-3 lg:w-4 lg:h-4 ${getRarityColors(card.rarity).icon}`} />
                              <span className={`text-[8px] sm:text-[10px] lg:text-xs font-bold uppercase tracking-wider ${getRarityColors(card.rarity).text}`}>{card.rarity}</span>
                            </div>
+                           {!isCollectionView && newCardIds.has(card.id) && (
+                             <div className="absolute top-10 left-2 bg-red-600 text-white text-[8px] sm:text-[10px] font-black px-1.5 py-0.5 rounded shadow-lg uppercase">
+                               New!
+                             </div>
+                           )}
                            <div className="bg-black/50 backdrop-blur rounded px-1.5 py-0.5 sm:px-2 sm:py-1">
                              <span className="text-yellow-400 font-bold text-[10px] sm:text-xs lg:text-sm">⭐ {card.rating.toFixed(1)}</span>
                            </div>
