@@ -54,6 +54,81 @@ export default function Home() {
   const [collection, setCollection] = useState<CardData[]>([]);
   const [isCollectionView, setIsCollectionView] = useState(false);
   const [sortBy, setSortBy] = useState<SortOption>("rarity_high");
+  const [gridSize, setGridSize] = useState<"sm" | "md" | "lg">("lg");
+  const [showTrailerIdx, setShowTrailerIdx] = useState<number | null>(null);
+  const [isMuted, setIsMuted] = useState(false);
+
+  const playSound = useCallback((type: "tear" | "flip" | "sparkle" | "swoosh" | Rarity) => {
+    if (isMuted) return;
+    
+    const urls = {
+      tear: "https://assets.mixkit.co/active_storage/sfx/147/147-preview.mp3", // tear
+      flip: "https://assets.mixkit.co/active_storage/sfx/2019/2019-preview.mp3", // simple flip
+      swoosh: "https://assets.mixkit.co/active_storage/sfx/2000/2000-preview.mp3", // move
+      sparkle: "https://assets.mixkit.co/active_storage/sfx/1998/1998-preview.mp3", // Cinematic magic whoosh
+      Common: "https://assets.mixkit.co/active_storage/sfx/2019/2019-preview.mp3", 
+      Uncommon: "https://assets.mixkit.co/active_storage/sfx/2000/2000-preview.mp3",
+      Rare: "https://assets.mixkit.co/active_storage/sfx/2018/2018-preview.mp3", 
+      Epic: "https://assets.mixkit.co/active_storage/sfx/2013/2013-preview.mp3",
+      Legendary: "https://assets.mixkit.co/active_storage/sfx/1998/1998-preview.mp3"
+    };
+
+    const audio = new Audio(urls[type as keyof typeof urls] || urls.flip);
+    
+    let baseVolume = 0.08; 
+    if (type === "Legendary" || type === "sparkle") baseVolume = 0.4; // High impact
+    if (type === "Epic") baseVolume = 0.15;
+    if (type === "Rare") baseVolume = 0.12;
+    
+    audio.volume = baseVolume;
+    audio.play().catch(e => console.log("Audio play blocked", e));
+
+    const duration = (type === "Legendary" || type === "sparkle") ? 3000 : 500;
+    setTimeout(() => {
+      const fadeOut = setInterval(() => {
+        if (audio.volume > 0.01) {
+          audio.volume -= 0.01;
+        } else {
+          audio.pause();
+          clearInterval(fadeOut);
+        }
+      }, 20);
+    }, duration);
+  }, [isMuted]);
+
+  // Effect to sync reveal sounds with flip state
+  useEffect(() => {
+    if (packState !== "revealing") return;
+    
+    if (flippedCards[activeCardIndex] && !playedRevealSounds.current.has(activeCardIndex)) {
+      const card = cards[activeCardIndex];
+      if (card) {
+        playedRevealSounds.current.add(activeCardIndex);
+        playSound(card.rarity);
+        
+        if (card.rarity === "Legendary") {
+          confetti({
+            particleCount: 150,
+            spread: 80,
+            origin: { y: 0.6 },
+            colors: ["#FBBF24", "#F59E0B", "#D97706", "#FFFBEB"],
+          });
+        }
+      }
+    }
+  }, [flippedCards, activeCardIndex, packState, cards, playSound]);
+
+  useEffect(() => {
+    let timeout: NodeJS.Timeout;
+    if (packState === "revealing" && flippedCards[activeCardIndex]) {
+      timeout = setTimeout(() => {
+        setShowTrailerIdx(activeCardIndex);
+      }, 3000);
+    } else {
+      setShowTrailerIdx(null);
+    }
+    return () => clearTimeout(timeout);
+  }, [packState, flippedCards, activeCardIndex]);
 
   useEffect(() => {
     const saved = localStorage.getItem("gacha_collection");
@@ -68,6 +143,7 @@ export default function Home() {
 
   const topPartRef = useRef<HTMLDivElement>(null);
   const isOpenedRef = useRef(false);
+  const playedRevealSounds = useRef<Set<number>>(new Set());
   const controls = useAnimation();
 
   const handleOpen = useCallback(async () => {
@@ -123,6 +199,7 @@ export default function Home() {
     if (packState !== "sealed" && packState !== "tearing") return;
     setIsTearing(true);
     setPackState("tearing");
+    playSound("tear");
     updateTear(e.clientX);
     if (topPartRef.current) {
       topPartRef.current.setPointerCapture(e.pointerId);
@@ -150,14 +227,6 @@ export default function Home() {
 
   const handleFlip = (idx: number) => {
     setFlippedCards(prev => ({ ...prev, [idx]: true }));
-    if (cards[idx]?.rarity === "Legendary") {
-      confetti({
-        particleCount: 150,
-        spread: 80,
-        origin: { y: 0.6 },
-        colors: ["#FBBF24", "#F59E0B", "#D97706", "#FFFBEB"],
-      });
-    }
   };
 
   const handleNextCard = () => {
@@ -176,6 +245,8 @@ export default function Home() {
     setActiveCardIndex(0);
     setFlippedCards({});
     setIsGridView(false);
+    setShowTrailerIdx(null);
+    playedRevealSounds.current.clear();
     controls.set({ x: 0, y: 0, opacity: 1, rotate: 0 });
   };
 
@@ -261,14 +332,27 @@ export default function Home() {
           <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-600 pointer-events-auto">
             Pack Opener
           </h1>
-          <button 
-            onClick={() => setIsCollectionView(true)}
-            className="pointer-events-auto bg-white/10 hover:bg-white/20 backdrop-blur-md border border-white/20 text-white font-semibold py-2 px-3 sm:px-4 rounded-full shadow-lg transition-all text-xs sm:text-sm flex items-center gap-1 sm:gap-2"
-          >
-            <LayoutGrid className="w-4 h-4" />
-            <span className="hidden sm:inline">Collection</span>
-            <span className="bg-pink-600/80 px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-bold">{collection.length}</span>
-          </button>
+          <div className="flex items-center gap-2 pointer-events-auto">
+            <button 
+              onClick={() => setIsMuted(!isMuted)}
+              className="bg-white/10 hover:bg-white/20 backdrop-blur-md border border-white/20 text-white p-2 rounded-full shadow-lg transition-all group"
+              title={isMuted ? "Unmute" : "Mute"}
+            >
+              {isMuted ? (
+                <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" /></svg>
+              ) : (
+                <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" /></svg>
+              )}
+            </button>
+            <button 
+              onClick={() => setIsCollectionView(true)}
+              className="bg-white/10 hover:bg-white/20 backdrop-blur-md border border-white/20 text-white font-semibold py-2 px-3 sm:px-4 rounded-full shadow-lg transition-all text-xs sm:text-sm flex items-center gap-1 sm:gap-2"
+            >
+              <LayoutGrid className="w-4 h-4" />
+              <span className="hidden sm:inline">Collection</span>
+              <span className="bg-pink-600/80 px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-bold">{collection.length}</span>
+            </button>
+          </div>
         </div>
 
         <div className="flex-1 w-full relative flex items-center justify-center select-none pt-16">
@@ -280,6 +364,14 @@ export default function Home() {
               
               const isFlipped = flippedCards[idx] || packState === "done";
               const zIndex = packState === "done" ? cards.length - idx : 20;
+
+              let youtubeId = null;
+              if (card.trailer) {
+                const parts = card.trailer.split("v=");
+                if (parts.length > 1) {
+                  youtubeId = parts[1].split("&")[0];
+                }
+              }
 
               return (
                 <motion.div
@@ -303,7 +395,7 @@ export default function Home() {
                       }
                     }
                   }}
-                  className="absolute cursor-pointer perspective-1000 w-64 h-80"
+                  className="absolute cursor-pointer perspective-1000 w-[368px] h-[461px]"
                   style={{ zIndex }}
                 >
                   <motion.div
@@ -351,9 +443,23 @@ export default function Home() {
                         {/* Background Poster Cover */}
                         {card.poster && (
                           <div 
-                            className="absolute inset-0 bg-cover bg-center opacity-80 mix-blend-overlay"
-                            style={{ backgroundImage: `url(${card.poster})` }}
+                            className="absolute inset-0 bg-cover bg-center opacity-80 mix-blend-overlay transition-opacity duration-1000"
+                            style={{ backgroundImage: `url(${card.poster})`, opacity: showTrailerIdx === idx && youtubeId ? 0 : 0.8 }}
                           />
+                        )}
+
+                        {showTrailerIdx === idx && youtubeId && (
+                          <div className="absolute inset-0 overflow-hidden pointer-events-none mix-blend-overlay">
+                            <motion.iframe
+                              initial={{ opacity: 0 }}
+                              animate={{ opacity: 0.8 }}
+                              transition={{ duration: 1 }}
+                              className="w-[300%] h-full -ml-[100%] scale-[1.3] pointer-events-none"
+                              src={`https://www.youtube.com/embed/${youtubeId}?autoplay=1&mute=0&controls=0&loop=1&playlist=${youtubeId}&modestbranding=1&rel=0&showinfo=0`}
+                              frameBorder="0"
+                              allow="autoplay; encrypted-media"
+                            />
+                          </div>
                         )}
 
                         <div className="absolute inset-x-0 top-0 h-1/2 bg-gradient-to-b from-black/80 via-black/30 to-transparent" />
@@ -398,7 +504,7 @@ export default function Home() {
           {/* THE PACK */}
           {packState !== "done" && packState !== "revealing" && (
             <motion.div
-              className="absolute w-64 h-80 z-30 flex flex-col items-center"
+              className="absolute w-[368px] h-[461px] z-30 flex flex-col items-center"
               animate={{ y: [0, -5, 0], transition: { repeat: Infinity, duration: 4, ease: "easeInOut" } }}
             >
               <div className="relative w-full h-full flex flex-col group drop-shadow-2xl">
@@ -498,22 +604,32 @@ export default function Home() {
                 key="done-controls"
                 initial={{ opacity: 0, scale: 0.9 }}
                 animate={{ opacity: 1, scale: 1 }}
-                className="flex flex-col sm:flex-row items-center gap-4"
+                className="flex flex-col items-center gap-6"
               >
-                <button
-                  onClick={() => setIsGridView(true)}
-                  className="group flex items-center gap-2 bg-white/10 hover:bg-white/20 backdrop-blur-md border border-white/20 text-white font-semibold py-3 px-6 rounded-full shadow-lg transition-all"
-                >
-                  <LayoutGrid className="w-5 h-5 group-hover:scale-110 transition-transform" />
-                  View Details
-                </button>
-                <button
+                <button 
                   onClick={resetPack}
-                  className="group flex items-center gap-2 bg-gradient-to-r from-pink-500 to-purple-600 hover:from-pink-400 hover:to-purple-500 text-white font-bold py-3 px-6 rounded-full shadow-lg hover:shadow-pink-500/25 transition-all transform hover:scale-105 active:scale-95"
+                  className="bg-white/10 hover:bg-white/20 backdrop-blur-md border border-white/20 text-white p-3 rounded-full shadow-lg transition-all group"
+                  title="Close Pack"
                 >
-                  <RefreshCcw className="w-5 h-5 group-hover:-rotate-180 transition-transform duration-500" />
-                  Open Another
+                  <X className="w-5 h-5 group-hover:scale-110 transition-transform" />
                 </button>
+
+                <div className="flex flex-col sm:flex-row items-center gap-4">
+                  <button
+                    onClick={() => setIsGridView(true)}
+                    className="group flex items-center gap-2 bg-white/10 hover:bg-white/20 backdrop-blur-md border border-white/20 text-white font-semibold py-3 px-6 rounded-full shadow-lg transition-all"
+                  >
+                    <LayoutGrid className="w-5 h-5 group-hover:scale-110 transition-transform" />
+                    View Details
+                  </button>
+                  <button
+                    onClick={resetPack}
+                    className="group flex items-center gap-2 bg-gradient-to-r from-pink-500 to-purple-600 hover:from-pink-400 hover:to-purple-500 text-white font-bold py-3 px-6 rounded-full shadow-lg hover:shadow-pink-500/25 transition-all transform hover:scale-105 active:scale-95"
+                  >
+                    <RefreshCcw className="w-5 h-5 group-hover:-rotate-180 transition-transform duration-500" />
+                    Open Another
+                  </button>
+                </div>
               </motion.div>
             )}
           </AnimatePresence>
@@ -544,15 +660,15 @@ export default function Home() {
               </h2>
 
               {isCollectionView && (
-                <div className="flex flex-col sm:flex-row items-center justify-between w-full max-w-xs sm:max-w-md bg-white/5 backdrop-blur-md border border-white/10 rounded-2xl p-4 sm:p-6 mb-8 gap-4 shadow-xl">
-                  <div className="flex flex-col items-center sm:items-start w-full sm:w-auto">
+                <div className="flex flex-col sm:flex-row items-center justify-between w-full max-w-xs sm:max-w-2xl bg-white/5 backdrop-blur-md border border-white/10 rounded-2xl p-4 sm:p-6 mb-8 gap-4 shadow-xl">
+                  <div className="flex flex-col items-center sm:items-start w-full sm:w-auto shrink-0">
                     <span className="text-white/50 text-xs font-semibold uppercase tracking-wider mb-1">Total Cards</span>
                     <span className="text-2xl font-black text-white">{collection.length}</span>
                   </div>
                   
                   <div className="h-px sm:h-12 w-full sm:w-px bg-white/10"></div>
                   
-                  <div className="flex flex-col items-center sm:items-start w-full sm:w-auto relative">
+                  <div className="flex flex-col items-center sm:items-start w-full sm:w-auto relative flex-1">
                     <span className="text-white/50 text-xs font-semibold uppercase tracking-wider mb-1">Sort By</span>
                     <div className="relative w-full">
                       <select 
@@ -576,6 +692,17 @@ export default function Home() {
                       </div>
                     </div>
                   </div>
+
+                  <div className="h-px sm:h-12 w-full sm:w-px bg-white/10 shrink-0"></div>
+
+                  <div className="flex flex-col items-center sm:items-start w-full sm:w-auto shrink-0">
+                    <span className="text-white/50 text-xs font-semibold uppercase tracking-wider mb-1">Size</span>
+                    <div className="flex bg-black/40 border border-white/20 rounded-lg p-1">
+                      <button onClick={() => setGridSize("sm")} className={`px-3 py-1 text-xs font-bold rounded ${gridSize === "sm" ? "bg-white/20 text-white" : "text-white/50 hover:text-white transition-colors"}`}>S</button>
+                      <button onClick={() => setGridSize("md")} className={`px-3 py-1 text-xs font-bold rounded ${gridSize === "md" ? "bg-white/20 text-white" : "text-white/50 hover:text-white transition-colors"}`}>M</button>
+                      <button onClick={() => setGridSize("lg")} className={`px-3 py-1 text-xs font-bold rounded ${gridSize === "lg" ? "bg-white/20 text-white" : "text-white/50 hover:text-white transition-colors"}`}>L</button>
+                    </div>
+                  </div>
                 </div>
               )}
               
@@ -593,18 +720,29 @@ export default function Home() {
               )}
 
               <div className="flex flex-wrap justify-center gap-6 sm:gap-8">
-                {getSortedCards(isCollectionView ? collection : cards).map((card, idx) => (
+                {getSortedCards(isCollectionView ? collection : cards).map((card, idx) => {
+                  const dims = gridSize === "sm" 
+                    ? { container: "w-[147px] h-[184px]", content: "w-[368px] h-[461px]", scale: 147 / 368 }
+                    : gridSize === "md"
+                    ? { container: "w-[184px] h-[230px]", content: "w-[368px] h-[461px]", scale: 184 / 368 }
+                    : { container: "w-[200px] h-[250px] sm:w-[280px] sm:h-[350px] lg:w-[368px] lg:h-[461px]", content: "w-full h-full", scale: 1 };
+
+                  return (
                   <motion.div 
                     key={`grid-${card.id}-${idx}`}
                     initial={{ opacity: 0, scale: 0.8 }}
                     animate={{ opacity: 1, scale: 1 }}
                     transition={{ delay: (idx % 10) * 0.05 }} // modulo for large collections
-                    className="relative w-40 h-52 sm:w-56 sm:h-72 lg:w-64 lg:h-80 cursor-pointer group transition-transform hover:scale-105"
+                    className={`relative ${dims.container} cursor-pointer group transition-transform hover:scale-105`}
                     onClick={() => {
                       if (card.imdb_link) window.open(card.imdb_link, "_blank");
                       else if (card.trailer) window.open(card.trailer, "_blank");
                     }}
                   >
+                    <div 
+                      className={`${dims.content} origin-top-left`} 
+                      style={{ transform: dims.scale !== 1 ? `scale(${dims.scale})` : "none" }}
+                    >
                     <div className={`w-full h-full bg-gradient-to-br ${getRarityColors(card.rarity).bg} rounded-xl p-0.5 sm:p-1 shadow-2xl relative`}>
                       <div className={`w-full h-full border sm:border-2 ${getRarityColors(card.rarity).border} rounded-lg flex flex-col bg-black/50 backdrop-blur-sm relative overflow-hidden group`}>
                         {/* Background Poster Cover */}
@@ -646,8 +784,9 @@ export default function Home() {
                       </div>
                       <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/20 to-transparent opacity-50 mix-blend-overlay rounded-xl pointer-events-none"></div>
                     </div>
+                    </div>
                   </motion.div>
-                ))}
+                )})}
               </div>
 
             </div>
