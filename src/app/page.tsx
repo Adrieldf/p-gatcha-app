@@ -316,6 +316,12 @@ export default function Home() {
     controls.set({ x: 0, y: 0, opacity: 1, rotate: 0 });
   };
 
+  const clearCollection = () => {
+    if (!window.confirm("Are you sure you want to clear your entire collection? This cannot be undone.")) return;
+    localStorage.removeItem("gacha_collection");
+    setCollection([]);
+  };
+
   const topFoilContent = (
     <div className="w-full h-full flex flex-col pointer-events-none">
       <div className="w-full h-4 bg-gradient-to-b from-slate-500 to-slate-600 rounded-t-lg overflow-hidden flex shrink-0">
@@ -809,6 +815,21 @@ export default function Home() {
                       <button onClick={() => setGridSize("md")} className={`px-3 py-1 text-xs font-bold rounded ${gridSize === "md" ? "bg-white/20 text-white" : "text-white/50 hover:text-white transition-colors"}`}>M</button>
                       <button onClick={() => setGridSize("lg")} className={`px-3 py-1 text-xs font-bold rounded ${gridSize === "lg" ? "bg-white/20 text-white" : "text-white/50 hover:text-white transition-colors"}`}>L</button>
                     </div>
+                  </div>
+
+                  <div className="h-px sm:h-12 w-full sm:w-px bg-white/10 shrink-0"></div>
+
+                  <div className="flex flex-col items-center sm:items-start w-full sm:w-auto shrink-0">
+                    <span className="text-white/50 text-xs font-semibold uppercase tracking-wider mb-1">Collection</span>
+                    <button
+                      onClick={clearCollection}
+                      disabled={collection.length === 0}
+                      className="flex items-center gap-1.5 bg-red-900/40 hover:bg-red-700/60 disabled:opacity-30 disabled:cursor-not-allowed border border-red-500/40 hover:border-red-400/60 text-red-300 hover:text-white text-xs font-bold py-1.5 px-3 rounded-lg shadow transition-all"
+                      title="Clear entire collection"
+                    >
+                      <X className="w-3 h-3" />
+                      Clear All
+                    </button>
                   </div>
                 </div>
               )}
