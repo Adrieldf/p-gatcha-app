@@ -2,14 +2,15 @@
 
 import { useState, useRef, useCallback, useEffect } from "react";
 import { motion, useAnimation, AnimatePresence } from "framer-motion";
-import { Sparkles, RefreshCcw, ChevronRight, LayoutGrid, X } from "lucide-react";
+import { Sparkles, RefreshCcw, ChevronRight, LayoutGrid, X, Film, Tv } from "lucide-react";
 import confetti from "canvas-confetti";
 
 type PackState = "sealed" | "tearing" | "opened" | "revealing" | "done";
 type Rarity = "Common" | "Uncommon" | "Rare" | "Epic" | "Legendary";
 type SortOption = "name_asc" | "name_desc" | "rarity_high" | "rarity_low" | "year_new" | "year_old" | "rating_high" | "rating_low";
+type TypeFilter = "all" | "movie" | "tv";
 
-import { CardData, fetchRandomMovies } from "../lib/tmdb";
+import { CardData, fetchRandomPack } from "../lib/tmdb";
 
 const ScrollableTitle = ({ title, baseClass }: { title: string; baseClass: string }) => {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -61,6 +62,7 @@ export default function Home() {
   const [isAutoMode, setIsAutoMode] = useState(false);
   const [packSize, setPackSize] = useState(5);
   const [showClearModal, setShowClearModal] = useState(false);
+  const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -178,12 +180,12 @@ export default function Home() {
     if (isOpenedRef.current) return;
     isOpenedRef.current = true;
     setIsLoading(true);
-    const fetchedCards = await fetchRandomMovies(packSize);
+    const fetchedCards = await fetchRandomPack(packSize);
 
     // Check which IDs are new
     const existingIds = new Set(collection.map(c => c.id));
     const newlyFoundIds = new Set<string>();
-    fetchedCards.forEach(c => {
+    fetchedCards.forEach((c: CardData) => {
       if (!existingIds.has(c.id)) {
         newlyFoundIds.add(c.id);
       }
@@ -349,7 +351,7 @@ export default function Home() {
             <div className="absolute inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center rounded-xl">
               <div className="flex flex-col items-center">
                 <RefreshCcw className="w-8 h-8 text-white animate-spin mb-2" />
-                <span className="text-white font-medium text-sm animate-pulse">Fetching Movies...</span>
+                <span className="text-white font-medium text-sm animate-pulse">Fetching Media...</span>
               </div>
             </div>
           )}
@@ -418,6 +420,11 @@ export default function Home() {
           return 0;
       }
     });
+  };
+
+  const getFilteredCollection = (cardList: CardData[]) => {
+    if (typeFilter === "all") return cardList;
+    return cardList.filter(card => card.type === typeFilter);
   };
 
   return (
@@ -584,6 +591,10 @@ export default function Home() {
                                 New!
                               </motion.div>
                             )}
+                            <div className="bg-black/50 backdrop-blur rounded px-2 py-1 flex items-center gap-1 mt-1">
+                              {card.type === "movie" ? <Film className="w-3 h-3 text-slate-300" /> : <Tv className="w-3 h-3 text-slate-300" />}
+                              <span className="text-[10px] font-bold uppercase text-slate-300">{card.type}</span>
+                            </div>
                           </div>
                           <div className="bg-black/50 backdrop-blur rounded px-2 py-1">
                             <span className="text-yellow-400 font-bold text-sm">⭐ {(card.rating ?? 0).toFixed(1)}</span>
@@ -683,7 +694,7 @@ export default function Home() {
                     </div>
                   </div>
                   <div className="absolute bottom-8 left-0 right-0 text-center font-black text-xl text-slate-200 uppercase tracking-[0.2em] shadow-black drop-shadow-lg">
-                    Movies Pack
+                    Cinema Pack
                   </div>
                   <div className="absolute bottom-0 left-0 right-0 h-4 bg-gradient-to-t from-slate-600 to-slate-500 rounded-b-lg overflow-hidden flex">
                     {Array.from({ length: 20 }).map((_, i) => (
@@ -786,63 +797,78 @@ export default function Home() {
               </h2>
 
               {isCollectionView && (
-                <div className="flex flex-col sm:flex-row items-center justify-between w-full max-w-xs sm:max-w-2xl bg-white/5 backdrop-blur-md border border-white/10 rounded-2xl p-4 sm:p-6 mb-8 gap-4 shadow-xl">
-                  <div className="flex flex-col items-center sm:items-start w-full sm:w-auto shrink-0">
-                    <span className="text-white/50 text-xs font-semibold uppercase tracking-wider mb-1">Total Cards</span>
-                    <span className="text-2xl font-black text-white">{collection.length}</span>
-                  </div>
+                <div className="flex flex-col w-full max-w-2xl gap-4 mb-8">
+                  {/* Row 1: Stats & Sorting */}
+                  <div className="flex flex-col sm:flex-row items-center justify-between w-full bg-white/5 backdrop-blur-md border border-white/10 rounded-2xl p-4 sm:px-6 gap-4 shadow-xl">
+                    <div className="flex flex-col items-center sm:items-start w-full sm:w-auto shrink-0">
+                      <span className="text-white/50 text-xs font-semibold uppercase tracking-wider mb-1">Total Cards</span>
+                      <span className="text-2xl font-black text-white">{collection.length}</span>
+                    </div>
 
-                  <div className="h-px sm:h-12 w-full sm:w-px bg-white/10"></div>
+                    <div className="h-px sm:h-12 w-full sm:w-px bg-white/10"></div>
 
-                  <div className="flex flex-col items-center sm:items-start w-full sm:w-auto relative flex-1">
-                    <span className="text-white/50 text-xs font-semibold uppercase tracking-wider mb-1">Sort By</span>
-                    <div className="relative w-full">
-                      <select
-                        value={sortBy}
-                        onChange={(e) => setSortBy(e.target.value as SortOption)}
-                        className="appearance-none w-full bg-black/40 border border-white/20 text-white font-medium text-sm rounded-lg pl-3 pr-8 py-2 outline-none focus:ring-2 focus:ring-purple-500/50 focus:border-purple-500/50 transition-all cursor-pointer hover:bg-black/60 shadow-inner"
-                      >
-                        <option value="rarity_high">Highest Rarity</option>
-                        <option value="rarity_low">Lowest Rarity</option>
-                        <option value="rating_high">Highest Rating</option>
-                        <option value="rating_low">Lowest Rating</option>
-                        <option value="name_asc">Name (A-Z)</option>
-                        <option value="name_desc">Name (Z-A)</option>
-                        <option value="year_new">Newest Release</option>
-                        <option value="year_old">Oldest Release</option>
-                      </select>
-                      <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-white/70">
-                        <svg className="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20">
-                          <path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z" />
-                        </svg>
+                    <div className="flex flex-col items-center sm:items-start w-full sm:w-auto relative flex-1">
+                      <span className="text-white/50 text-xs font-semibold uppercase tracking-wider mb-1">Sort By</span>
+                      <div className="relative w-full">
+                        <select
+                          value={sortBy}
+                          onChange={(e) => setSortBy(e.target.value as SortOption)}
+                          className="appearance-none w-full bg-black/40 border border-white/20 text-white font-medium text-sm rounded-lg pl-3 pr-8 py-2 outline-none focus:ring-2 focus:ring-purple-500/50 focus:border-purple-500/50 transition-all cursor-pointer hover:bg-black/60 shadow-inner"
+                        >
+                          <option value="rarity_high">Highest Rarity</option>
+                          <option value="rarity_low">Lowest Rarity</option>
+                          <option value="rating_high">Highest Rating</option>
+                          <option value="rating_low">Lowest Rating</option>
+                          <option value="name_asc">Name (A-Z)</option>
+                          <option value="name_desc">Name (Z-A)</option>
+                          <option value="year_new">Newest Release</option>
+                          <option value="year_old">Oldest Release</option>
+                        </select>
+                        <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-white/70">
+                          <svg className="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20">
+                            <path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z" />
+                          </svg>
+                        </div>
                       </div>
                     </div>
                   </div>
 
-                  <div className="h-px sm:h-12 w-full sm:w-px bg-white/10 shrink-0"></div>
-
-                  <div className="flex flex-col items-center sm:items-start w-full sm:w-auto shrink-0">
-                    <span className="text-white/50 text-xs font-semibold uppercase tracking-wider mb-1">Size</span>
-                    <div className="flex bg-black/40 border border-white/20 rounded-lg p-1">
-                      <button onClick={() => setGridSize("sm")} className={`px-3 py-1 text-xs font-bold rounded ${gridSize === "sm" ? "bg-white/20 text-white" : "text-white/50 hover:text-white transition-colors"}`}>S</button>
-                      <button onClick={() => setGridSize("md")} className={`px-3 py-1 text-xs font-bold rounded ${gridSize === "md" ? "bg-white/20 text-white" : "text-white/50 hover:text-white transition-colors"}`}>M</button>
-                      <button onClick={() => setGridSize("lg")} className={`px-3 py-1 text-xs font-bold rounded ${gridSize === "lg" ? "bg-white/20 text-white" : "text-white/50 hover:text-white transition-colors"}`}>L</button>
+                  {/* Row 2: Filtering & Actions */}
+                  <div className="flex flex-col sm:flex-row items-center justify-between w-full bg-white/5 backdrop-blur-md border border-white/10 rounded-2xl p-4 sm:px-6 gap-4 shadow-xl">
+                    <div className="flex flex-col items-center sm:items-start w-full sm:w-auto shrink-0">
+                      <span className="text-white/50 text-xs font-semibold uppercase tracking-wider mb-1">Filter Type</span>
+                      <div className="flex bg-black/40 border border-white/20 rounded-lg p-1">
+                        <button onClick={() => setTypeFilter("all")} className={`px-2 py-1 text-[10px] sm:text-xs font-bold rounded ${typeFilter === "all" ? "bg-white/20 text-white" : "text-white/50 hover:text-white transition-colors"}`}>All</button>
+                        <button onClick={() => setTypeFilter("movie")} className={`px-2 py-1 text-[10px] sm:text-xs font-bold rounded flex items-center gap-1 ${typeFilter === "movie" ? "bg-white/20 text-white" : "text-white/50 hover:text-white transition-colors"}`}><Film className="w-3 h-3" /> Movies</button>
+                        <button onClick={() => setTypeFilter("tv")} className={`px-2 py-1 text-[10px] sm:text-xs font-bold rounded flex items-center gap-1 ${typeFilter === "tv" ? "bg-white/20 text-white" : "text-white/50 hover:text-white transition-colors"}`}><Tv className="w-3 h-3" /> TV</button>
+                      </div>
                     </div>
-                  </div>
 
-                  <div className="h-px sm:h-12 w-full sm:w-px bg-white/10 shrink-0"></div>
+                    <div className="h-px sm:h-12 w-full sm:w-px bg-white/10 shrink-0"></div>
 
-                  <div className="flex flex-col items-center sm:items-start w-full sm:w-auto shrink-0">
-                    <span className="text-white/50 text-xs font-semibold uppercase tracking-wider mb-1">Collection</span>
-                    <button
-                      onClick={clearCollection}
-                      disabled={collection.length === 0}
-                      className="flex items-center gap-1.5 bg-red-900/40 hover:bg-red-700/60 disabled:opacity-30 disabled:cursor-not-allowed border border-red-500/40 hover:border-red-400/60 text-red-300 hover:text-white text-xs font-bold py-1.5 px-3 rounded-lg shadow transition-all"
-                      title="Clear entire collection"
-                    >
-                      <X className="w-3 h-3" />
-                      Clear All
-                    </button>
+                    <div className="flex flex-col items-center sm:items-start w-full sm:w-auto shrink-0">
+                      <span className="text-white/50 text-xs font-semibold uppercase tracking-wider mb-1">Grid Size</span>
+                      <div className="flex bg-black/40 border border-white/20 rounded-lg p-1">
+                        <button onClick={() => setGridSize("sm")} className={`px-3 py-1 text-xs font-bold rounded ${gridSize === "sm" ? "bg-white/20 text-white" : "text-white/50 hover:text-white transition-colors"}`}>S</button>
+                        <button onClick={() => setGridSize("md")} className={`px-3 py-1 text-xs font-bold rounded ${gridSize === "md" ? "bg-white/20 text-white" : "text-white/50 hover:text-white transition-colors"}`}>M</button>
+                        <button onClick={() => setGridSize("lg")} className={`px-3 py-1 text-xs font-bold rounded ${gridSize === "lg" ? "bg-white/20 text-white" : "text-white/50 hover:text-white transition-colors"}`}>L</button>
+                      </div>
+                    </div>
+
+                    <div className="h-px sm:h-12 w-full sm:w-px bg-white/10 shrink-0"></div>
+
+                    <div className="flex flex-col items-center sm:items-start w-full sm:w-auto shrink-0">
+                      <span className="text-white/50 text-xs font-semibold uppercase tracking-wider mb-1">Actions</span>
+                      <button
+                        onClick={clearCollection}
+                        disabled={collection.length === 0}
+                        className="flex items-center gap-1.5 bg-red-900/40 hover:bg-red-700/60 disabled:opacity-30 disabled:cursor-not-allowed border border-red-500/40 hover:border-red-400/60 text-red-300 hover:text-white text-xs font-bold py-1.5 px-3 rounded-lg shadow transition-all"
+                        title="Clear entire collection"
+                      >
+                        <X className="w-3 h-3" />
+                        Clear All
+                      </button>
+                    </div>
                   </div>
                 </div>
               )}
@@ -865,7 +891,7 @@ export default function Home() {
                   "grid-cols-1 min-[500px]:grid-cols-2"
                 }`}>
                 {(isCollectionView
-                  ? getGroupedCollection(getSortedCards(collection))
+                  ? getGroupedCollection(getSortedCards(getFilteredCollection(collection)))
                   : getSortedCards(cards).map(c => ({ card: c, count: 1 }))
                 ).map((item, idx) => {
                   const { card, count } = item;
@@ -911,11 +937,17 @@ export default function Home() {
                                 <Sparkles className={`w-2 h-2 sm:w-3 sm:h-3 lg:w-4 lg:h-4 ${getRarityColors(card.rarity).icon}`} />
                                 <span className={`text-[8px] sm:text-[10px] lg:text-xs font-bold uppercase tracking-wider ${getRarityColors(card.rarity).text}`}>{card.rarity}</span>
                               </div>
-                              {!isCollectionView && newCardIds.has(card.id) && (
-                                <div className="absolute top-10 left-2 bg-red-600 text-white text-[8px] sm:text-[10px] font-black px-1.5 py-0.5 rounded shadow-lg uppercase">
-                                  New!
+                              <div className="flex flex-col gap-1 items-end">
+                                <div className="bg-black/50 backdrop-blur rounded px-1.5 py-0.5 flex items-center gap-1 border border-white/10">
+                                  {card.type === "movie" ? <Film className="w-2.5 h-2.5 text-slate-400" /> : <Tv className="w-2.5 h-2.5 text-slate-400" />}
+                                  <span className="text-[8px] font-black uppercase text-slate-400">{card.type}</span>
                                 </div>
-                              )}
+                                {!isCollectionView && newCardIds.has(card.id) && (
+                                  <div className="bg-red-600 text-white text-[8px] sm:text-[10px] font-black px-1.5 py-0.5 rounded shadow-lg uppercase">
+                                    New!
+                                  </div>
+                                )}
+                              </div>
                               <div className="bg-black/50 backdrop-blur rounded px-1.5 py-0.5 sm:px-2 sm:py-1">
                                 <span className="text-yellow-400 font-bold text-[10px] sm:text-xs lg:text-sm">⭐ {(card.rating ?? 0).toFixed(1)}</span>
                               </div>

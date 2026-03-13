@@ -10,6 +10,7 @@ export interface CardData {
   trailer?: string;
   imdb_link?: string;
   year?: number;
+  type: "movie" | "tv";
 }
 
 const TMDB_BASE_URL = "https://api.themoviedb.org/3";
@@ -23,53 +24,61 @@ const getRarityByRating = (rating: number): Rarity => {
   return "Common";
 };
 
-export const fetchRandomMovies = async (count: number = 5): Promise<CardData[]> => {
+export const fetchRandomPack = async (count: number = 5): Promise<CardData[]> => {
   const apiKey = process.env.NEXT_PUBLIC_TMDB_API_KEY;
   if (!apiKey) {
     console.error("TMDB API Key missing. Please set NEXT_PUBLIC_TMDB_API_KEY in .env.local");
-    return []; // Return empty if no key
+    return [];
   }
 
   try {
-    // 1. Determine how many pages we need (TMDB returns 20 per page)
-    const pagesNeeded = Math.ceil(count / 20);
     const movieResults: any[] = [];
     
-    // Fetch unique random pages
-    const usedPages = new Set<number>();
-    while (usedPages.size < pagesNeeded) {
-      const randomPage = Math.floor(Math.random() * 100) + 1; 
-      usedPages.add(randomPage);
-    }
+    // We'll fetch from both movies and tv shows
+    // We determine how many pages we need roughly. 
+    // Since each page has 20, count/20 is usually 1, but we fetch more to have variety.
+    const pagesPerType = Math.max(1, Math.ceil(count / 10)); 
 
-    const pageResponses = await Promise.all(
-      Array.from(usedPages).map(page => 
-        fetch(`${TMDB_BASE_URL}/movie/popular?api_key=${apiKey}&language=en-US&page=${page}`)
-          .then(res => res.ok ? res.json() : { results: [] })
-      )
-    );
-
-    pageResponses.forEach(data => {
-      if (data.results) {
-        movieResults.push(...data.results);
+    const fetchItems = async (type: 'movie' | 'tv', pages: number) => {
+      const usedPages = new Set<number>();
+      while (usedPages.size < pages) {
+        // TMDB allows up to 500 pages for most requests
+        const randomPage = Math.floor(Math.random() * 500) + 1;
+        usedPages.add(randomPage);
       }
-    });
 
-    if (movieResults.length === 0) return [];
+      const responses = await Promise.all(
+        Array.from(usedPages).map(page =>
+          fetch(`${TMDB_BASE_URL}/${type}/popular?api_key=${apiKey}&language=en-US&page=${page}`)
+            .then(res => res.ok ? res.json() : { results: [] })
+        )
+      );
 
-    // 2. Shuffle and pick exactly `count` movies
-    const shuffled = movieResults.sort(() => 0.5 - Math.random());
-    const selectedMovies = shuffled.slice(0, count);
+      return responses.flatMap(data => (data.results || []).map((item: any) => ({ ...item, media_type: type })));
+    };
 
-    // 3. Enhance with extra details in parallel
-    const enrichedMovies: CardData[] = await Promise.all(
-      selectedMovies.map(async (movie: any): Promise<CardData> => {
+    const [movies, tvShows] = await Promise.all([
+      fetchItems('movie', pagesPerType),
+      fetchItems('tv', pagesPerType)
+    ]);
+
+    const allResults = [...movies, ...tvShows];
+    if (allResults.length === 0) return [];
+
+    // Shuffle and pick exactly `count`
+    const shuffled = allResults.sort(() => 0.5 - Math.random());
+    const selectedItems = shuffled.slice(0, count);
+
+    // Enrich with extra details in parallel
+    const enrichedItems: CardData[] = await Promise.all(
+      selectedItems.map(async (item: any): Promise<CardData> => {
+        const type = item.media_type;
         let trailerUrl = "";
         let imdbId = "";
 
         // Fetch videos
         try {
-          const videoRes = await fetch(`${TMDB_BASE_URL}/movie/${movie.id}/videos?api_key=${apiKey}&language=en-US`);
+          const videoRes = await fetch(`${TMDB_BASE_URL}/${type}/${item.id}/videos?api_key=${apiKey}&language=en-US`);
           if (videoRes.ok) {
             const videoData = await videoRes.json();
             const trailer = videoData.results.find((vid: any) => vid.type === "Trailer" && vid.site === "YouTube");
@@ -81,7 +90,7 @@ export const fetchRandomMovies = async (count: number = 5): Promise<CardData[]> 
 
         // Fetch external IDs
         try {
-          const extRes = await fetch(`${TMDB_BASE_URL}/movie/${movie.id}/external_ids?api_key=${apiKey}`);
+          const extRes = await fetch(`${TMDB_BASE_URL}/${type}/${item.id}/external_ids?api_key=${apiKey}`);
           if (extRes.ok) {
             const extData = await extRes.json();
             if (extData.imdb_id) {
@@ -90,26 +99,28 @@ export const fetchRandomMovies = async (count: number = 5): Promise<CardData[]> 
           }
         } catch (e) { console.error(e) }
 
-        let movieYear: number | undefined;
-        if (movie.release_date) {
-            movieYear = parseInt(movie.release_date.split('-')[0], 10);
+        let year: number | undefined;
+        const dateStr = item.release_date || item.first_air_date;
+        if (dateStr) {
+          year = parseInt(dateStr.split('-')[0], 10);
         }
 
         return {
-          id: movie.id.toString(),
-          rarity: getRarityByRating(movie.vote_average ?? 0),
-          name: movie.original_title || movie.title,
-          description: movie.overview,
-          poster: movie.poster_path ? `${TMDB_IMAGE_BASE_URL}${movie.poster_path}` : "", // Fallback if null
-          rating: movie.vote_average ?? 0,
+          id: `${type}-${item.id}`, // Prefix with type to avoid ID collisions
+          rarity: getRarityByRating(item.vote_average ?? 0),
+          name: item.title || item.name || item.original_title || item.original_name,
+          description: item.overview,
+          poster: item.poster_path ? `${TMDB_IMAGE_BASE_URL}${item.poster_path}` : "",
+          rating: item.vote_average ?? 0,
           trailer: trailerUrl,
           imdb_link: imdbId,
-          year: movieYear,
+          year: year,
+          type: type,
         };
       })
     );
 
-    // 4. Sort by rarity to maintain the dramatic reveal order (Common -> Legendary)
+    // Sort by rarity
     const rarityOrder: Record<Rarity, number> = {
       Common: 0,
       Uncommon: 1,
@@ -118,10 +129,11 @@ export const fetchRandomMovies = async (count: number = 5): Promise<CardData[]> 
       Legendary: 4,
     };
 
-    return enrichedMovies.sort((a, b) => rarityOrder[a.rarity] - rarityOrder[b.rarity]);
+    return enrichedItems.sort((a, b) => rarityOrder[a.rarity] - rarityOrder[b.rarity]);
 
   } catch (error) {
-    console.error("Error fetching TMDB movies:", error);
+    console.error("Error fetching TMDB data:", error);
     return [];
   }
 };
+
