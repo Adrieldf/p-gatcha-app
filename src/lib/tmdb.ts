@@ -65,9 +65,25 @@ export const fetchRandomPack = async (count: number = 5): Promise<CardData[]> =>
     const allResults = [...movies, ...tvShows];
     if (allResults.length === 0) return [];
 
-    // Shuffle and pick exactly `count`
-    const shuffled = allResults.sort(() => 0.5 - Math.random());
-    const selectedItems = shuffled.slice(0, count);
+    // 1. Deduplicate the pool based on ID and type to prevent "same numbers"
+    const uniqueMap = new Map();
+    allResults.forEach(item => {
+      const uniqueId = `${item.media_type}-${item.id}`;
+      if (!uniqueMap.has(uniqueId)) {
+        uniqueMap.set(uniqueId, item);
+      }
+    });
+    
+    const uniquePool = Array.from(uniqueMap.values());
+
+    // 2. Fisher-Yates Shuffle for true unbiased randomness
+    for (let i = uniquePool.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [uniquePool[i], uniquePool[j]] = [uniquePool[j], uniquePool[i]];
+    }
+
+    // 3. Pick exactly `count` or as many as available
+    const selectedItems = uniquePool.slice(0, Math.min(count, uniquePool.length));
 
     // Enrich with extra details in parallel
     const enrichedItems: CardData[] = await Promise.all(
