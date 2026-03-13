@@ -60,6 +60,7 @@ export default function Home() {
   const [newCardIds, setNewCardIds] = useState<Set<string>>(new Set());
   const [isAutoMode, setIsAutoMode] = useState(false);
   const [packSize, setPackSize] = useState(5);
+  const [showClearModal, setShowClearModal] = useState(false);
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -149,11 +150,19 @@ export default function Home() {
     return () => clearTimeout(timeout);
   }, [packState, flippedCards, activeCardIndex, isAutoMode]);
 
+  const sanitizeCards = (cards: CardData[]): CardData[] =>
+    cards.map((card) => ({
+      ...card,
+      rating: card.rating ?? 0,
+      name: card.name ?? "Unknown",
+      rarity: card.rarity ?? "Common",
+    }));
+
   useEffect(() => {
     const saved = localStorage.getItem("gacha_collection");
     if (saved) {
       try {
-        setCollection(JSON.parse(saved));
+        setCollection(sanitizeCards(JSON.parse(saved)));
       } catch (e) {
         console.error("Failed to parse local collection", e);
       }
@@ -317,9 +326,13 @@ export default function Home() {
   };
 
   const clearCollection = () => {
-    if (!window.confirm("Are you sure you want to clear your entire collection? This cannot be undone.")) return;
+    setShowClearModal(true);
+  };
+
+  const confirmClearCollection = () => {
     localStorage.removeItem("gacha_collection");
     setCollection([]);
+    setShowClearModal(false);
   };
 
   const topFoilContent = (
@@ -434,7 +447,7 @@ export default function Home() {
               )}
             </button>
             <button
-              onClick={() => setIsCollectionView(true)}
+              onClick={() => { setCollection(prev => sanitizeCards(prev)); setIsCollectionView(true); }}
               className="bg-white/10 hover:bg-white/20 backdrop-blur-md border border-white/20 text-white font-semibold py-2 px-3 sm:px-4 rounded-full shadow-lg transition-all text-xs sm:text-sm flex items-center gap-1 sm:gap-2"
             >
               <LayoutGrid className="w-4 h-4" />
@@ -573,7 +586,7 @@ export default function Home() {
                             )}
                           </div>
                           <div className="bg-black/50 backdrop-blur rounded px-2 py-1">
-                            <span className="text-yellow-400 font-bold text-sm">⭐ {card.rating.toFixed(1)}</span>
+                            <span className="text-yellow-400 font-bold text-sm">⭐ {(card.rating ?? 0).toFixed(1)}</span>
                           </div>
                         </div>
 
@@ -904,7 +917,7 @@ export default function Home() {
                                 </div>
                               )}
                               <div className="bg-black/50 backdrop-blur rounded px-1.5 py-0.5 sm:px-2 sm:py-1">
-                                <span className="text-yellow-400 font-bold text-[10px] sm:text-xs lg:text-sm">⭐ {card.rating.toFixed(1)}</span>
+                                <span className="text-yellow-400 font-bold text-[10px] sm:text-xs lg:text-sm">⭐ {(card.rating ?? 0).toFixed(1)}</span>
                               </div>
                             </div>
 
@@ -936,6 +949,62 @@ export default function Home() {
               </div>
 
             </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* CLEAR COLLECTION CONFIRMATION MODAL */}
+      <AnimatePresence>
+        {showClearModal && (
+          <motion.div
+            key="clear-modal-backdrop"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[100] flex items-center justify-center p-6"
+            style={{ backgroundColor: "rgba(0,0,0,0.75)", backdropFilter: "blur(8px)" }}
+            onClick={() => setShowClearModal(false)}
+          >
+            <motion.div
+              key="clear-modal-box"
+              initial={{ opacity: 0, scale: 0.85, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.85, y: 20 }}
+              transition={{ type: "spring", bounce: 0.3, duration: 0.4 }}
+              className="relative bg-neutral-900 border border-white/10 rounded-2xl shadow-2xl p-8 max-w-sm w-full flex flex-col items-center gap-6"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Icon */}
+              <div className="w-16 h-16 rounded-full bg-red-900/40 border border-red-500/40 flex items-center justify-center">
+                <svg className="w-8 h-8 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+              </div>
+
+              {/* Text */}
+              <div className="text-center">
+                <h3 className="text-xl font-bold text-white mb-2">Clear Collection?</h3>
+                <p className="text-white/60 text-sm leading-relaxed">
+                  Are you sure you want to delete all <span className="text-white font-semibold">{collection.length} card{collection.length !== 1 ? 's' : ''}</span> from your collection? This action cannot be undone.
+                </p>
+              </div>
+
+              {/* Actions */}
+              <div className="flex gap-3 w-full">
+                <button
+                  onClick={() => setShowClearModal(false)}
+                  className="flex-1 bg-white/10 hover:bg-white/20 border border-white/20 text-white font-semibold py-2.5 px-4 rounded-xl transition-all"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={confirmClearCollection}
+                  className="flex-1 bg-red-600 hover:bg-red-500 text-white font-bold py-2.5 px-4 rounded-xl shadow-lg shadow-red-900/30 transition-all"
+                >
+                  Clear All
+                </button>
+              </div>
+            </motion.div>
           </motion.div>
         )}
       </AnimatePresence>

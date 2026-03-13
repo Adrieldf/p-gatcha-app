@@ -97,11 +97,11 @@ export const fetchRandomMovies = async (count: number = 5): Promise<CardData[]> 
 
         return {
           id: movie.id.toString(),
-          rarity: getRarityByRating(movie.vote_average),
+          rarity: getRarityByRating(movie.vote_average ?? 0),
           name: movie.original_title || movie.title,
           description: movie.overview,
           poster: movie.poster_path ? `${TMDB_IMAGE_BASE_URL}${movie.poster_path}` : "", // Fallback if null
-          rating: movie.vote_average,
+          rating: movie.vote_average ?? 0,
           trailer: trailerUrl,
           imdb_link: imdbId,
           year: movieYear,
